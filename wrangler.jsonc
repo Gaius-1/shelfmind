@@ -1,0 +1,33 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "shelfmind",
+  "compatibility_date": "2025-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "@tanstack/react-start/server-entry",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "shelfmind-db",
+      "database_id": "7890e230-be4b-461d-bffd-3ded77d84628",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PRODUCT_IMAGES",
+      "bucket_name": "shelfmind-images"
+    },
+    {
+      "binding": "EXPORTS",
+      "bucket_name": "shelfmind-exports"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "IMAGE_QUEUE",
+        "queue": "image-processing"
+      }
+    ]
+  }
+}
