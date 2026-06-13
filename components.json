@@ -1,12 +1,12 @@
 {
   "$schema": "https://ui.shadcn.com/schema.json",
-  "style": "radix-rhea",
+  "style": "radix-nova",
   "rsc": false,
   "tsx": true,
   "tailwind": {
     "config": "",
     "css": "src/styles.css",
-    "baseColor": "mist",
+    "baseColor": "zinc",
     "cssVariables": true,
     "prefix": ""
   },
@@ -22,6 +22,8 @@
     "hooks": "#/hooks"
   },
   "registries": {
-    "@spell": "https://spell.sh/r/{name}.json"
+    "@spell": "https://spell.sh/r/{name}.json",
+    "@reui": "https://reui.io/r/{style}/{name}.json",
+    "@svgl": "https://svgl.app/r/{name}.json"
   }
 }
