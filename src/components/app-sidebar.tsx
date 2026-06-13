@@ -25,7 +25,7 @@ import {
   CheckListIcon,
   PackageIcon,
   FilterIcon,
-  FileExportIcon,
+  // FileExportIcon,
   // Settings05Icon,
   SentIcon,
   BookHeadphonesIcon,
@@ -57,7 +57,7 @@ const navGroups: NavGroup[] = [
     label: "Processing",
     items: [
       { title: "Uploads", url: "/dashboard/uploads", icon: CloudUploadIcon },
-      { title: "Processing Queue", url: "/dashboard/processing-queue", icon: TaskDone01Icon },
+      { title: "Pipeline Workflow", url: "/dashboard/pipeline", icon: TaskDone01Icon },
       { title: "Review Queue", url: "/dashboard/review-queue", icon: CheckListIcon },
     ],
   },
@@ -66,12 +66,6 @@ const navGroups: NavGroup[] = [
     items: [
       { title: "Product Repository", url: "/dashboard/products", icon: PackageIcon },
       { title: "Duplicates", url: "/dashboard/duplicates", icon: FilterIcon },
-    ],
-  },
-  {
-    label: "Exports",
-    items: [
-      { title: "Export Center", url: "/dashboard/exports", icon: FileExportIcon },
     ],
   },
 ]
@@ -108,7 +102,7 @@ export function AppSidebar({
 
   return (
     <Sidebar variant="inset" {...props}>
-      <SidebarHeader>
+      <SidebarHeader className="border-b border-dashed border-sidebar-border/30 pb-3 mb-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
@@ -119,10 +113,10 @@ export function AppSidebar({
               <Link to="/dashboard">
                 <img src="/logo.png" alt="ShelfMind Logo" className="h-8 w-auto rounded-full" />
                 <div className="grid flex-1 text-left leading-tight">
-                  <span className="truncate text-xs font-semibold text-sidebar-foreground">
+                  <span className="truncate text-sm font-semibold text-sidebar-foreground">
                     ShelfMind
                   </span>
-                  <span className="truncate text-[10px] text-sidebar-foreground/50">
+                  <span className="truncate text-[11px] text-sidebar-foreground/50">
                     Workspace Dashboard
                   </span>
                 </div>
@@ -135,7 +129,7 @@ export function AppSidebar({
       <SidebarContent>
         {navGroups.map((group) => (
           <SidebarGroup key={group.label} className="py-0.5 px-2">
-            <SidebarGroupLabel className="h-5 text-[9px] font-bold uppercase tracking-widest text-sidebar-foreground/40 px-1">
+            <SidebarGroupLabel className="h-5 text-[10.5px] uppercase tracking-widest text-sidebar-foreground/40 px-1">
               {group.label}
             </SidebarGroupLabel>
             <SidebarMenu>
@@ -149,9 +143,8 @@ export function AppSidebar({
                     <SidebarMenuButton
                       asChild
                       isActive={isActive}
-                      size="sm"
                       tooltip={title}
-                      className="rounded-lg text-xs"
+                      className="rounded-lg text-[13px] font-medium h-9"
                     >
                       <Link to={url as any}>
                         <HugeiconsIcon icon={icon} strokeWidth={2} className="size-3.5" />
@@ -168,7 +161,7 @@ export function AppSidebar({
         <NavSecondary items={navSecondary} className="mt-auto" />
       </SidebarContent>
 
-      <SidebarFooter>
+      <SidebarFooter className="border-t border-dashed border-sidebar-border/30 pt-3 mt-2">
         <NavUser user={resolvedUser} />
       </SidebarFooter>
     </Sidebar>
