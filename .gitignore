@@ -13,4 +13,4 @@ __unconfig*
 todos.json
 
 # Agents
-.agents
+.agents/skills
