@@ -1,15 +1,7 @@
-import { sqliteTable, integer, text } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, integer, text, real } from 'drizzle-orm/sqlite-core'
 import { sql } from 'drizzle-orm'
 
-export const todos = sqliteTable('todos', {
-  id: integer({ mode: 'number' }).primaryKey({
-    autoIncrement: true,
-  }),
-  title: text().notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(
-    sql`(unixepoch())`,
-  ),
-})
+// ─── Better Auth Tables ──────────────────────────────────────────────────────
 
 export const user = sqliteTable('user', {
   id: text('id').primaryKey(),
@@ -98,3 +90,85 @@ export const invitation = sqliteTable('invitation', {
     .references(() => user.id),
 })
 
+// ─── ShelfMind Application Tables ────────────────────────────────────────────
+
+export const jobs = sqliteTable('jobs', {
+  id: text('id').primaryKey(),
+  organisationId: text('organisation_id')
+    .notNull()
+    .references(() => organization.id),
+  createdBy: text('created_by')
+    .notNull()
+    .references(() => user.id),
+  status: text('status').default('PENDING'), // PENDING | PROCESSING | COMPLETED | FAILED
+  progress: integer('progress').default(0), // 0–100
+  imageCount: integer('image_count').default(0),
+  startedAt: text('started_at'),
+  completedAt: text('completed_at'),
+  error: text('error'),
+})
+
+export const imdbRecords = sqliteTable('imdb_records', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id')
+    .notNull()
+    .references(() => jobs.id),
+  organisationId: text('organisation_id')
+    .notNull()
+    .references(() => organization.id),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 13 IMDB Columns — exact ground-truth order (matches types/imdb.ts)
+  // ═══════════════════════════════════════════════════════════════════════════
+  ITEM_NAME: text('ITEM_NAME'),
+  BARCODE: text('BARCODE'),
+  MANUFACTURER: text('MANUFACTURER'),
+  BRAND: text('BRAND'),
+  WEIGHT: text('WEIGHT'),
+  PACKAGING_TYPE: text('PACKAGING_TYPE'), // DB underscore; Excel header = "PACKAGING TYPE"
+  COUNTRY: text('COUNTRY'),
+  VARIANT: text('VARIANT'),
+  TYPE: text('TYPE'),
+  FRAGRANCE_FLAVOR: text('FRAGRANCE_FLAVOR'),
+  PROMOTION: text('PROMOTION'),
+  ADDONS: text('ADDONS'),
+  TAGLINE: text('TAGLINE'),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Metadata
+  // ═══════════════════════════════════════════════════════════════════════════
+  confidence: real('confidence'), // 0.0–1.0 weighted
+  flagged: integer('flagged', { mode: 'boolean' }).default(false),
+  rawExtraction: text('raw_extraction', { mode: 'json' }), // RawExtraction JSON
+  fieldMetadata: text('field_metadata', { mode: 'json' }), // Record<ImdbColumnName, FieldMeta>
+  productGroupKey: text('product_group_key'), // normalized name tag for grouping
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Soft-Deletion & Merge Lineage (MDM Auditability)
+  // ═══════════════════════════════════════════════════════════════════════════
+  status: text('status').default('ACTIVE'), // 'ACTIVE' | 'DELETED'
+  mergedIntoId: text('merged_into_id'), // FK → imdb_records.id — surviving parent on merge
+
+  createdAt: text('created_at').default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').default(sql`(datetime('now'))`),
+})
+
+// ─── Duplicate Pairs (Pre-Calculated Async Detection) ────────────────────────
+
+export const duplicatePairs = sqliteTable('duplicate_pairs', {
+  id: text('id').primaryKey(),
+  orgId: text('org_id')
+    .notNull()
+    .references(() => organization.id),
+  recordAId: text('record_a_id')
+    .notNull()
+    .references(() => imdbRecords.id),
+  recordBId: text('record_b_id')
+    .notNull()
+    .references(() => imdbRecords.id),
+  similarityScore: real('similarity_score'),
+  reason: text('reason'), // 'BARCODE_MATCH' | 'BRAND_WEIGHT_MATCH'
+  status: text('status').default('PENDING'), // 'PENDING' | 'DISMISSED' | 'MERGED'
+  createdAt: text('created_at').default(sql`(datetime('now'))`),
+  resolvedAt: text('resolved_at'),
+})
