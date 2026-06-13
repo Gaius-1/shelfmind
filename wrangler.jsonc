@@ -28,6 +28,22 @@
         "binding": "IMAGE_QUEUE",
         "queue": "image-processing"
       }
+    ],
+    "consumers": [
+      {
+        "queue": "image-processing",
+        "max_batch_size": 1,
+        "max_batch_timeout": 30
+      }
     ]
-  }
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "CACHE",
+      "id": "7290e230-be4b-461d-bffd-3ded77d84628"
+    }
+  ]
 }
