@@ -12,12 +12,30 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
+import { Route as DashboardUploadsRouteImport } from './routes/dashboard/uploads'
+import { Route as DashboardReviewQueueRouteImport } from './routes/dashboard/review-queue'
+import { Route as DashboardProductsRouteImport } from './routes/dashboard/products'
+import { Route as DashboardProcessingQueueRouteImport } from './routes/dashboard/processing-queue'
+import { Route as DashboardPipelineRouteImport } from './routes/dashboard/pipeline'
+import { Route as DashboardExportsRouteImport } from './routes/dashboard/exports'
+import { Route as DashboardDuplicatesRouteImport } from './routes/dashboard/duplicates'
+import { Route as ApiStatsRouteImport } from './routes/api/stats'
 import { Route as DashboardSettingsRouteImport } from './routes/_dashboard/settings'
 import { Route as DashboardSecurityRouteImport } from './routes/_dashboard/security'
 import { Route as DashboardOrganizationRouteImport } from './routes/_dashboard/organization'
 import { Route as DashboardMembersRouteImport } from './routes/_dashboard/members'
 import { Route as DashboardInfrastructureRouteImport } from './routes/_dashboard/infrastructure'
+import { Route as ApiProductsIndexRouteImport } from './routes/api/products/index'
+import { Route as ApiJobsIndexRouteImport } from './routes/api/jobs/index'
+import { Route as ApiDuplicatesIndexRouteImport } from './routes/api/duplicates/index'
+import { Route as DashboardReviewQueueRecordIdRouteImport } from './routes/dashboard/review-queue.$recordId'
+import { Route as ApiRecordsRecordIdRouteImport } from './routes/api/records/$recordId'
+import { Route as ApiJobsFilesRouteImport } from './routes/api/jobs/files'
+import { Route as ApiJobsJobIdRouteImport } from './routes/api/jobs/$jobId'
+import { Route as ApiDuplicatesPairIdRouteImport } from './routes/api/duplicates/$pairId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiJobsJobIdRecordsRouteImport } from './routes/api/jobs/$jobId/records'
+import { Route as ApiJobsJobIdExportRouteImport } from './routes/api/jobs/$jobId/export'
 
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
@@ -33,6 +51,47 @@ const DashboardIndexRoute = DashboardIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardUploadsRoute = DashboardUploadsRouteImport.update({
+  id: '/uploads',
+  path: '/uploads',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardReviewQueueRoute = DashboardReviewQueueRouteImport.update({
+  id: '/review-queue',
+  path: '/review-queue',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardProductsRoute = DashboardProductsRouteImport.update({
+  id: '/products',
+  path: '/products',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardProcessingQueueRoute =
+  DashboardProcessingQueueRouteImport.update({
+    id: '/processing-queue',
+    path: '/processing-queue',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardPipelineRoute = DashboardPipelineRouteImport.update({
+  id: '/pipeline',
+  path: '/pipeline',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardExportsRoute = DashboardExportsRouteImport.update({
+  id: '/exports',
+  path: '/exports',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardDuplicatesRoute = DashboardDuplicatesRouteImport.update({
+  id: '/duplicates',
+  path: '/duplicates',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const ApiStatsRoute = ApiStatsRouteImport.update({
+  id: '/api/stats',
+  path: '/api/stats',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
   id: '/_dashboard/settings',
@@ -59,10 +118,61 @@ const DashboardInfrastructureRoute = DashboardInfrastructureRouteImport.update({
   path: '/infrastructure',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiProductsIndexRoute = ApiProductsIndexRouteImport.update({
+  id: '/api/products/',
+  path: '/api/products/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiJobsIndexRoute = ApiJobsIndexRouteImport.update({
+  id: '/api/jobs/',
+  path: '/api/jobs/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDuplicatesIndexRoute = ApiDuplicatesIndexRouteImport.update({
+  id: '/api/duplicates/',
+  path: '/api/duplicates/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardReviewQueueRecordIdRoute =
+  DashboardReviewQueueRecordIdRouteImport.update({
+    id: '/$recordId',
+    path: '/$recordId',
+    getParentRoute: () => DashboardReviewQueueRoute,
+  } as any)
+const ApiRecordsRecordIdRoute = ApiRecordsRecordIdRouteImport.update({
+  id: '/api/records/$recordId',
+  path: '/api/records/$recordId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiJobsFilesRoute = ApiJobsFilesRouteImport.update({
+  id: '/api/jobs/files',
+  path: '/api/jobs/files',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiJobsJobIdRoute = ApiJobsJobIdRouteImport.update({
+  id: '/api/jobs/$jobId',
+  path: '/api/jobs/$jobId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDuplicatesPairIdRoute = ApiDuplicatesPairIdRouteImport.update({
+  id: '/api/duplicates/$pairId',
+  path: '/api/duplicates/$pairId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ApiJobsJobIdRecordsRoute = ApiJobsJobIdRecordsRouteImport.update({
+  id: '/records',
+  path: '/records',
+  getParentRoute: () => ApiJobsJobIdRoute,
+} as any)
+const ApiJobsJobIdExportRoute = ApiJobsJobIdExportRouteImport.update({
+  id: '/export',
+  path: '/export',
+  getParentRoute: () => ApiJobsJobIdRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -73,8 +183,26 @@ export interface FileRoutesByFullPath {
   '/organization': typeof DashboardOrganizationRoute
   '/security': typeof DashboardSecurityRoute
   '/settings': typeof DashboardSettingsRoute
+  '/api/stats': typeof ApiStatsRoute
+  '/dashboard/duplicates': typeof DashboardDuplicatesRoute
+  '/dashboard/exports': typeof DashboardExportsRoute
+  '/dashboard/pipeline': typeof DashboardPipelineRoute
+  '/dashboard/processing-queue': typeof DashboardProcessingQueueRoute
+  '/dashboard/products': typeof DashboardProductsRoute
+  '/dashboard/review-queue': typeof DashboardReviewQueueRouteWithChildren
+  '/dashboard/uploads': typeof DashboardUploadsRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/duplicates/$pairId': typeof ApiDuplicatesPairIdRoute
+  '/api/jobs/$jobId': typeof ApiJobsJobIdRouteWithChildren
+  '/api/jobs/files': typeof ApiJobsFilesRoute
+  '/api/records/$recordId': typeof ApiRecordsRecordIdRoute
+  '/dashboard/review-queue/$recordId': typeof DashboardReviewQueueRecordIdRoute
+  '/api/duplicates/': typeof ApiDuplicatesIndexRoute
+  '/api/jobs/': typeof ApiJobsIndexRoute
+  '/api/products/': typeof ApiProductsIndexRoute
+  '/api/jobs/$jobId/export': typeof ApiJobsJobIdExportRoute
+  '/api/jobs/$jobId/records': typeof ApiJobsJobIdRecordsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -83,8 +211,26 @@ export interface FileRoutesByTo {
   '/organization': typeof DashboardOrganizationRoute
   '/security': typeof DashboardSecurityRoute
   '/settings': typeof DashboardSettingsRoute
+  '/api/stats': typeof ApiStatsRoute
+  '/dashboard/duplicates': typeof DashboardDuplicatesRoute
+  '/dashboard/exports': typeof DashboardExportsRoute
+  '/dashboard/pipeline': typeof DashboardPipelineRoute
+  '/dashboard/processing-queue': typeof DashboardProcessingQueueRoute
+  '/dashboard/products': typeof DashboardProductsRoute
+  '/dashboard/review-queue': typeof DashboardReviewQueueRouteWithChildren
+  '/dashboard/uploads': typeof DashboardUploadsRoute
   '/dashboard': typeof DashboardIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/duplicates/$pairId': typeof ApiDuplicatesPairIdRoute
+  '/api/jobs/$jobId': typeof ApiJobsJobIdRouteWithChildren
+  '/api/jobs/files': typeof ApiJobsFilesRoute
+  '/api/records/$recordId': typeof ApiRecordsRecordIdRoute
+  '/dashboard/review-queue/$recordId': typeof DashboardReviewQueueRecordIdRoute
+  '/api/duplicates': typeof ApiDuplicatesIndexRoute
+  '/api/jobs': typeof ApiJobsIndexRoute
+  '/api/products': typeof ApiProductsIndexRoute
+  '/api/jobs/$jobId/export': typeof ApiJobsJobIdExportRoute
+  '/api/jobs/$jobId/records': typeof ApiJobsJobIdRecordsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -95,8 +241,26 @@ export interface FileRoutesById {
   '/_dashboard/organization': typeof DashboardOrganizationRoute
   '/_dashboard/security': typeof DashboardSecurityRoute
   '/_dashboard/settings': typeof DashboardSettingsRoute
+  '/api/stats': typeof ApiStatsRoute
+  '/dashboard/duplicates': typeof DashboardDuplicatesRoute
+  '/dashboard/exports': typeof DashboardExportsRoute
+  '/dashboard/pipeline': typeof DashboardPipelineRoute
+  '/dashboard/processing-queue': typeof DashboardProcessingQueueRoute
+  '/dashboard/products': typeof DashboardProductsRoute
+  '/dashboard/review-queue': typeof DashboardReviewQueueRouteWithChildren
+  '/dashboard/uploads': typeof DashboardUploadsRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/duplicates/$pairId': typeof ApiDuplicatesPairIdRoute
+  '/api/jobs/$jobId': typeof ApiJobsJobIdRouteWithChildren
+  '/api/jobs/files': typeof ApiJobsFilesRoute
+  '/api/records/$recordId': typeof ApiRecordsRecordIdRoute
+  '/dashboard/review-queue/$recordId': typeof DashboardReviewQueueRecordIdRoute
+  '/api/duplicates/': typeof ApiDuplicatesIndexRoute
+  '/api/jobs/': typeof ApiJobsIndexRoute
+  '/api/products/': typeof ApiProductsIndexRoute
+  '/api/jobs/$jobId/export': typeof ApiJobsJobIdExportRoute
+  '/api/jobs/$jobId/records': typeof ApiJobsJobIdRecordsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -108,8 +272,26 @@ export interface FileRouteTypes {
     | '/organization'
     | '/security'
     | '/settings'
+    | '/api/stats'
+    | '/dashboard/duplicates'
+    | '/dashboard/exports'
+    | '/dashboard/pipeline'
+    | '/dashboard/processing-queue'
+    | '/dashboard/products'
+    | '/dashboard/review-queue'
+    | '/dashboard/uploads'
     | '/dashboard/'
     | '/api/auth/$'
+    | '/api/duplicates/$pairId'
+    | '/api/jobs/$jobId'
+    | '/api/jobs/files'
+    | '/api/records/$recordId'
+    | '/dashboard/review-queue/$recordId'
+    | '/api/duplicates/'
+    | '/api/jobs/'
+    | '/api/products/'
+    | '/api/jobs/$jobId/export'
+    | '/api/jobs/$jobId/records'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -118,8 +300,26 @@ export interface FileRouteTypes {
     | '/organization'
     | '/security'
     | '/settings'
+    | '/api/stats'
+    | '/dashboard/duplicates'
+    | '/dashboard/exports'
+    | '/dashboard/pipeline'
+    | '/dashboard/processing-queue'
+    | '/dashboard/products'
+    | '/dashboard/review-queue'
+    | '/dashboard/uploads'
     | '/dashboard'
     | '/api/auth/$'
+    | '/api/duplicates/$pairId'
+    | '/api/jobs/$jobId'
+    | '/api/jobs/files'
+    | '/api/records/$recordId'
+    | '/dashboard/review-queue/$recordId'
+    | '/api/duplicates'
+    | '/api/jobs'
+    | '/api/products'
+    | '/api/jobs/$jobId/export'
+    | '/api/jobs/$jobId/records'
   id:
     | '__root__'
     | '/'
@@ -129,8 +329,26 @@ export interface FileRouteTypes {
     | '/_dashboard/organization'
     | '/_dashboard/security'
     | '/_dashboard/settings'
+    | '/api/stats'
+    | '/dashboard/duplicates'
+    | '/dashboard/exports'
+    | '/dashboard/pipeline'
+    | '/dashboard/processing-queue'
+    | '/dashboard/products'
+    | '/dashboard/review-queue'
+    | '/dashboard/uploads'
     | '/dashboard/'
     | '/api/auth/$'
+    | '/api/duplicates/$pairId'
+    | '/api/jobs/$jobId'
+    | '/api/jobs/files'
+    | '/api/records/$recordId'
+    | '/dashboard/review-queue/$recordId'
+    | '/api/duplicates/'
+    | '/api/jobs/'
+    | '/api/products/'
+    | '/api/jobs/$jobId/export'
+    | '/api/jobs/$jobId/records'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -141,7 +359,15 @@ export interface RootRouteChildren {
   DashboardOrganizationRoute: typeof DashboardOrganizationRoute
   DashboardSecurityRoute: typeof DashboardSecurityRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
+  ApiStatsRoute: typeof ApiStatsRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiDuplicatesPairIdRoute: typeof ApiDuplicatesPairIdRoute
+  ApiJobsJobIdRoute: typeof ApiJobsJobIdRouteWithChildren
+  ApiJobsFilesRoute: typeof ApiJobsFilesRoute
+  ApiRecordsRecordIdRoute: typeof ApiRecordsRecordIdRoute
+  ApiDuplicatesIndexRoute: typeof ApiDuplicatesIndexRoute
+  ApiJobsIndexRoute: typeof ApiJobsIndexRoute
+  ApiProductsIndexRoute: typeof ApiProductsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -166,6 +392,62 @@ declare module '@tanstack/react-router' {
       fullPath: '/dashboard/'
       preLoaderRoute: typeof DashboardIndexRouteImport
       parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/uploads': {
+      id: '/dashboard/uploads'
+      path: '/uploads'
+      fullPath: '/dashboard/uploads'
+      preLoaderRoute: typeof DashboardUploadsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/review-queue': {
+      id: '/dashboard/review-queue'
+      path: '/review-queue'
+      fullPath: '/dashboard/review-queue'
+      preLoaderRoute: typeof DashboardReviewQueueRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/products': {
+      id: '/dashboard/products'
+      path: '/products'
+      fullPath: '/dashboard/products'
+      preLoaderRoute: typeof DashboardProductsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/processing-queue': {
+      id: '/dashboard/processing-queue'
+      path: '/processing-queue'
+      fullPath: '/dashboard/processing-queue'
+      preLoaderRoute: typeof DashboardProcessingQueueRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/pipeline': {
+      id: '/dashboard/pipeline'
+      path: '/pipeline'
+      fullPath: '/dashboard/pipeline'
+      preLoaderRoute: typeof DashboardPipelineRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/exports': {
+      id: '/dashboard/exports'
+      path: '/exports'
+      fullPath: '/dashboard/exports'
+      preLoaderRoute: typeof DashboardExportsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/duplicates': {
+      id: '/dashboard/duplicates'
+      path: '/duplicates'
+      fullPath: '/dashboard/duplicates'
+      preLoaderRoute: typeof DashboardDuplicatesRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/api/stats': {
+      id: '/api/stats'
+      path: '/api/stats'
+      fullPath: '/api/stats'
+      preLoaderRoute: typeof ApiStatsRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_dashboard/settings': {
       id: '/_dashboard/settings'
@@ -202,6 +484,62 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardInfrastructureRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/products/': {
+      id: '/api/products/'
+      path: '/api/products'
+      fullPath: '/api/products/'
+      preLoaderRoute: typeof ApiProductsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/jobs/': {
+      id: '/api/jobs/'
+      path: '/api/jobs'
+      fullPath: '/api/jobs/'
+      preLoaderRoute: typeof ApiJobsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/duplicates/': {
+      id: '/api/duplicates/'
+      path: '/api/duplicates'
+      fullPath: '/api/duplicates/'
+      preLoaderRoute: typeof ApiDuplicatesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/review-queue/$recordId': {
+      id: '/dashboard/review-queue/$recordId'
+      path: '/$recordId'
+      fullPath: '/dashboard/review-queue/$recordId'
+      preLoaderRoute: typeof DashboardReviewQueueRecordIdRouteImport
+      parentRoute: typeof DashboardReviewQueueRoute
+    }
+    '/api/records/$recordId': {
+      id: '/api/records/$recordId'
+      path: '/api/records/$recordId'
+      fullPath: '/api/records/$recordId'
+      preLoaderRoute: typeof ApiRecordsRecordIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/jobs/files': {
+      id: '/api/jobs/files'
+      path: '/api/jobs/files'
+      fullPath: '/api/jobs/files'
+      preLoaderRoute: typeof ApiJobsFilesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/jobs/$jobId': {
+      id: '/api/jobs/$jobId'
+      path: '/api/jobs/$jobId'
+      fullPath: '/api/jobs/$jobId'
+      preLoaderRoute: typeof ApiJobsJobIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/duplicates/$pairId': {
+      id: '/api/duplicates/$pairId'
+      path: '/api/duplicates/$pairId'
+      fullPath: '/api/duplicates/$pairId'
+      preLoaderRoute: typeof ApiDuplicatesPairIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -209,19 +547,72 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/jobs/$jobId/records': {
+      id: '/api/jobs/$jobId/records'
+      path: '/records'
+      fullPath: '/api/jobs/$jobId/records'
+      preLoaderRoute: typeof ApiJobsJobIdRecordsRouteImport
+      parentRoute: typeof ApiJobsJobIdRoute
+    }
+    '/api/jobs/$jobId/export': {
+      id: '/api/jobs/$jobId/export'
+      path: '/export'
+      fullPath: '/api/jobs/$jobId/export'
+      preLoaderRoute: typeof ApiJobsJobIdExportRouteImport
+      parentRoute: typeof ApiJobsJobIdRoute
+    }
   }
 }
 
+interface DashboardReviewQueueRouteChildren {
+  DashboardReviewQueueRecordIdRoute: typeof DashboardReviewQueueRecordIdRoute
+}
+
+const DashboardReviewQueueRouteChildren: DashboardReviewQueueRouteChildren = {
+  DashboardReviewQueueRecordIdRoute: DashboardReviewQueueRecordIdRoute,
+}
+
+const DashboardReviewQueueRouteWithChildren =
+  DashboardReviewQueueRoute._addFileChildren(DashboardReviewQueueRouteChildren)
+
 interface DashboardRouteChildren {
+  DashboardDuplicatesRoute: typeof DashboardDuplicatesRoute
+  DashboardExportsRoute: typeof DashboardExportsRoute
+  DashboardPipelineRoute: typeof DashboardPipelineRoute
+  DashboardProcessingQueueRoute: typeof DashboardProcessingQueueRoute
+  DashboardProductsRoute: typeof DashboardProductsRoute
+  DashboardReviewQueueRoute: typeof DashboardReviewQueueRouteWithChildren
+  DashboardUploadsRoute: typeof DashboardUploadsRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
+  DashboardDuplicatesRoute: DashboardDuplicatesRoute,
+  DashboardExportsRoute: DashboardExportsRoute,
+  DashboardPipelineRoute: DashboardPipelineRoute,
+  DashboardProcessingQueueRoute: DashboardProcessingQueueRoute,
+  DashboardProductsRoute: DashboardProductsRoute,
+  DashboardReviewQueueRoute: DashboardReviewQueueRouteWithChildren,
+  DashboardUploadsRoute: DashboardUploadsRoute,
   DashboardIndexRoute: DashboardIndexRoute,
 }
 
 const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
   DashboardRouteChildren,
+)
+
+interface ApiJobsJobIdRouteChildren {
+  ApiJobsJobIdExportRoute: typeof ApiJobsJobIdExportRoute
+  ApiJobsJobIdRecordsRoute: typeof ApiJobsJobIdRecordsRoute
+}
+
+const ApiJobsJobIdRouteChildren: ApiJobsJobIdRouteChildren = {
+  ApiJobsJobIdExportRoute: ApiJobsJobIdExportRoute,
+  ApiJobsJobIdRecordsRoute: ApiJobsJobIdRecordsRoute,
+}
+
+const ApiJobsJobIdRouteWithChildren = ApiJobsJobIdRoute._addFileChildren(
+  ApiJobsJobIdRouteChildren,
 )
 
 const rootRouteChildren: RootRouteChildren = {
@@ -232,7 +623,15 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardOrganizationRoute: DashboardOrganizationRoute,
   DashboardSecurityRoute: DashboardSecurityRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,
+  ApiStatsRoute: ApiStatsRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiDuplicatesPairIdRoute: ApiDuplicatesPairIdRoute,
+  ApiJobsJobIdRoute: ApiJobsJobIdRouteWithChildren,
+  ApiJobsFilesRoute: ApiJobsFilesRoute,
+  ApiRecordsRecordIdRoute: ApiRecordsRecordIdRoute,
+  ApiDuplicatesIndexRoute: ApiDuplicatesIndexRoute,
+  ApiJobsIndexRoute: ApiJobsIndexRoute,
+  ApiProductsIndexRoute: ApiProductsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
