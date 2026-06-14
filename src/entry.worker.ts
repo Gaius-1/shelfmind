@@ -101,7 +101,7 @@ export default {
       return new Response(err.stack || err.message || String(err), { status: 500 });
     }
   },
-  async queue(batch: any, env: any, ctx: any) {
+  async queue(batch: any, env: any, _ctx: any) {
     if (!globalThis.process) (globalThis as any).process = {};
     if (!globalThis.process.env) (globalThis as any).process.env = {};
     
