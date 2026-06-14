@@ -52,6 +52,19 @@ const routeOptions: any = {
             }
           }
 
+          try {
+            const { auth } = await import('#/lib/auth.ts')
+            results.authSuccess = true
+            results.authString = String(auth)
+          } catch (authErr: any) {
+            results.authSuccess = false
+            results.authError = {
+              name: authErr?.name,
+              message: authErr?.message,
+              stack: authErr?.stack,
+            }
+          }
+
           return new Response(JSON.stringify({
             status: "success",
             results,
