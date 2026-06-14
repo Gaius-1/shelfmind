@@ -72,7 +72,18 @@ export const initialNodes: Node<CustomNodeData>[] = [
 		type: "customNode",
 		position: { x: 750, y: 250 },
 		data: {
-			title: "Multi-Image Grouping",
+			title: "Fast Pre-Grouping",
+			description: "Groups images using barcodes & watermark audit IDs.",
+			iconType: "grouping",
+			status: "pending",
+		},
+	},
+	{
+		id: "post_ai_merging",
+		type: "customNode",
+		position: { x: 1100, y: 250 },
+		data: {
+			title: "Semantic Post-AI Matcher",
 			description: "Greedy Bipartite Matcher resolving mixed fronts & backs.",
 			iconType: "grouping",
 			status: "pending",
@@ -81,7 +92,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 	{
 		id: "aggregation",
 		type: "customNode",
-		position: { x: 1100, y: 250 },
+		position: { x: 1450, y: 250 },
 		data: {
 			title: "Aggregation Engine",
 			description: "Merges candidates and calculates confidence.",
@@ -92,7 +103,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 	{
 		id: "normalization",
 		type: "customNode",
-		position: { x: 1450, y: 250 },
+		position: { x: 1800, y: 250 },
 		data: {
 			title: "Normalization & Threshold",
 			description: "Cleans strings, formats, flags low confidence.",
@@ -103,7 +114,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 	{
 		id: "database",
 		type: "customNode",
-		position: { x: 1800, y: 250 },
+		position: { x: 2150, y: 250 },
 		data: {
 			title: "Database Write",
 			description: "Inserts records to Neon Postgres / SQLite.",
@@ -114,7 +125,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 	{
 		id: "deduplication",
 		type: "customNode",
-		position: { x: 2150, y: 250 },
+		position: { x: 2500, y: 250 },
 		data: {
 			title: "Deduplication Engine",
 			description: "Post-job scan against existing active records.",
@@ -178,6 +189,14 @@ export const initialEdges: Edge[] = [
 	{
 		id: "e7",
 		source: "grouping",
+		target: "post_ai_merging",
+		animated: false,
+		type: "smoothstep",
+		style: { strokeWidth: 2 },
+	},
+	{
+		id: "e7_post",
+		source: "post_ai_merging",
 		target: "aggregation",
 		animated: false,
 		type: "smoothstep",

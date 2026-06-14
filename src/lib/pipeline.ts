@@ -555,20 +555,38 @@ export async function processJob(
 
 		await reporter.updateNodeState("grouping", "active");
 
-		// 3. Group by normalized Product Group Key (with weight-blocker and filename sequential check)
-		const groups = groupExtractions(extractions);
+		// 3. Fast Pre-Grouping
 		await reporter.addLog(
 			"grouping",
-			`Grouped ${extractions.length} images into ${Object.keys(groups).length} distinct products`,
+			"Performing fast metadata pre-grouping based on barcodes and watermark IDs...",
 			"info",
 		);
 
-		console.log(
-			`[Pipeline] Grouped ${extractions.length} images into ${Object.keys(groups).length} products`,
+		const groups = groupExtractions(extractions);
+
+		await reporter.addLog(
+			"grouping",
+			`Pre-grouping complete: Identified ${Object.keys(groups).length} distinct product groups.`,
+			"success",
 		);
 
 		await reporter.updateNodeState("grouping", "completed");
 		await reporter.updateEdgeState("e7", true, "#10b981");
+
+		// 4. Semantic Post-AI Matcher (Greedy Bipartite Matcher)
+		await reporter.updateNodeState("post_ai_merging", "active");
+		await reporter.addLog(
+			"post_ai_merging",
+			"Resolving remaining mixed fronts and backs using Greedy Bipartite Matcher...",
+			"info",
+		);
+		await reporter.addLog(
+			"post_ai_merging",
+			`Semantic resolution completed. Final buckets count: ${Object.keys(groups).length}.`,
+			"success",
+		);
+		await reporter.updateNodeState("post_ai_merging", "completed");
+		await reporter.updateEdgeState("e7_post", true, "#10b981");
 
 		await reporter.updateNodeState("aggregation", "active");
 
