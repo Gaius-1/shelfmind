@@ -186,15 +186,28 @@ export function JobList({ jobs }: JobListProps) {
               {/* Action Button */}
               <div className="flex items-center justify-end sm:pl-4">
                 {isCompleted ? (
-                  <Link
-                    to="/dashboard/review-queue"
-                    search={{ jobId: job.id } as any}
-                    className="flex items-center gap-1.5 h-9 px-4 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/50 hover:bg-indigo-600 hover:text-white dark:hover:bg-indigo-500 dark:hover:text-white text-xs font-bold transition-all shadow-xs"
-                  >
-                    <CheckCircle2 className="size-3.5" />
-                    Review Records
-                    <ArrowRight className="size-3" />
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to="/dashboard/jobs/$jobId"
+                      params={{ jobId: job.id } as any}
+                      className="flex items-center gap-1.5 h-9 px-4 rounded-xl bg-neutral-100 dark:bg-neutral-800/60 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700/50 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-xs font-bold transition-all shadow-xs group"
+                    >
+                      <span className="flex h-2 w-2 relative">
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      </span>
+                      View Pipeline
+                      <ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" />
+                    </Link>
+                    <Link
+                      to="/dashboard/review-queue"
+                      search={{ jobId: job.id } as any}
+                      className="flex items-center gap-1.5 h-9 px-4 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/50 hover:bg-indigo-600 hover:text-white dark:hover:bg-indigo-500 dark:hover:text-white text-xs font-bold transition-all shadow-xs"
+                    >
+                      <CheckCircle2 className="size-3.5" />
+                      Review Records
+                      <ArrowRight className="size-3" />
+                    </Link>
+                  </div>
                 ) : isProcessing ? (
                   <Link
                     to="/dashboard/jobs/$jobId"
