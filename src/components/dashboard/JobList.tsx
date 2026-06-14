@@ -177,8 +177,8 @@ export function JobList({ jobs }: JobListProps) {
                   </Link>
                 ) : isProcessing || isPending ? (
                   <Link
-                    to="/dashboard/pipeline"
-                    search={{ jobId: job.id } as any}
+                    to="/dashboard/jobs/$jobId"
+                    params={{ jobId: job.id } as any}
                     className="flex items-center gap-1.5 h-9 px-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/40 dark:border-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-xs font-bold transition-all shadow-xs group"
                   >
                     <span className="flex h-2 w-2 relative">
