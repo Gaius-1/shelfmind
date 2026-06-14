@@ -364,12 +364,19 @@ Return ONLY valid JSON. Do not include markdown wraps or code block formatting. 
 	let productGroupKey = "";
 	let watermarkInfo: any = null;
 	try {
-		const cleanJson = structuredOutput
-			.trim()
-			.replace(/^```json/, "")
-			.replace(/```$/, "")
-			.trim();
-		const parsed = JSON.parse(cleanJson);
+		let jsonStr = structuredOutput;
+		const jsonMatch = structuredOutput.match(/```(?:json)?\s*([\s\S]*?)```/);
+		if (jsonMatch) {
+			jsonStr = jsonMatch[1];
+		} else {
+			const start = structuredOutput.indexOf("{");
+			const end = structuredOutput.lastIndexOf("}");
+			if (start !== -1 && end !== -1 && end > start) {
+				jsonStr = structuredOutput.substring(start, end + 1);
+			}
+		}
+		
+		const parsed = JSON.parse(jsonStr.trim());
 
 		productGroupKey = parsed.PRODUCT_GROUP_KEY || "";
 
