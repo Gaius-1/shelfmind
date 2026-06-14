@@ -27,11 +27,6 @@ export default defineConfig({
     viteReact(),
     babel({ presets: [reactCompilerPreset()] }),
   ],
-  build: {
-    rollupOptions: {
-      external: ['@better-auth/kysely-adapter', 'kysely'],
-    },
-  },
 })
 
 
