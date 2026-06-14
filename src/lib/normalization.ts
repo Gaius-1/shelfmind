@@ -228,7 +228,7 @@ export function normalizeField(
 			return normalizeCountry(clean);
 		case "BARCODE":
 			// Strip any non-numeric characters for barcodes, except keep if alphanumeric is expected (usually only digits)
-			return clean.replace(/[^\d]/g, "");
+			return clean.replace(/[^\d]/g, "").replace(/^0+/, "");
 		default:
 			return clean;
 	}

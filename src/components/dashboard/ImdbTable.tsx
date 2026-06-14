@@ -27,8 +27,24 @@ import {
   Check,
   Eye,
   Info,
+  Save,
+  CheckCircle,
+  AlertTriangle,
+  Sparkles,
+  FileText,
+  Barcode as BarcodeIcon,
 } from 'lucide-react'
 import { cn } from '#/lib/utils.ts'
+import {
+  Dialog,
+  DialogContent,
+} from '#/components/ui/dialog.tsx'
+import {
+  Frame,
+  FramePanel,
+  FrameHeader,
+  FrameTitle,
+} from '#/components/reui/frame.tsx'
 
 interface ImdbTableProps {
   records: any[]
@@ -151,10 +167,322 @@ function EditableCell({ record, columnName, value, orgId, jobId }: EditableCellP
   )
 }
 
+// ─── Record Detail Modal Component ──────────────────────────────────────────
+interface RecordDetailModalProps {
+  record: any
+  orgId: string
+  jobId: string
+  onClose: () => void
+}
+
+function RecordDetailModal({ record, orgId, jobId, onClose }: RecordDetailModalProps) {
+  // Local form state for the 13 fields
+  const [formFields, setFormFields] = useState<Record<string, string>>(() => {
+    const fields: Record<string, string> = {}
+    IMDB_COLUMNS.forEach((col) => {
+      fields[col] = record[col] || ''
+    })
+    return fields
+  })
+
+  // Watch for record changes
+  React.useEffect(() => {
+    const fields: Record<string, string> = {}
+    IMDB_COLUMNS.forEach((col) => {
+      fields[col] = record[col] || ''
+    })
+    setFormFields(fields)
+  }, [record])
+
+  const [activeImageIndex, setActiveImageIndex] = useState(0)
+  const [evidenceTab, setEvidenceTab] = useState<'zxing' | 'ocr' | 'vision'>('vision')
+  const [saveSuccess, setSaveSuccess] = useState(false)
+
+  const mutation = useRecordMutation({ orgId, jobId, recordId: record.id })
+
+  const handleFieldChange = (colName: string, val: string) => {
+    setFormFields((prev) => ({
+      ...prev,
+      [colName]: val,
+    }))
+    setSaveSuccess(false)
+  }
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaveSuccess(false)
+    try {
+      await mutation.mutateAsync({ fields: formFields })
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 3000)
+    } catch (err) {
+      console.error('[RecordDetailModal] Save failed:', err)
+    }
+  }
+
+  const images = record.rawExtraction?.images || []
+  const currentImage = images[activeImageIndex]
+
+  // Construct image retrieval URL
+  const getImageUrl = (fileName: string) => {
+    const key = `${orgId}/${jobId}/${fileName}`
+    return `/api/jobs/files?bucket=PRODUCT_IMAGES&key=${encodeURIComponent(key)}`
+  }
+
+  const getConfidenceColorClass = (score: number) => {
+    if (score < 0.5) return 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/30'
+    if (score < 0.75) return 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/30'
+    return 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/30'
+  }
+
+  return (
+    <div className="flex flex-col gap-5 w-full text-neutral-900 dark:text-neutral-50">
+      {/* Header Bar inside Dialog */}
+      <div className="flex flex-col gap-1.5 pb-4 border-b border-neutral-200 dark:border-neutral-800">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold truncate max-w-[80%] text-neutral-900 dark:text-neutral-50">
+            {record.ITEM_NAME || 'Unnamed Product'}
+          </h2>
+          {record.flagged && (
+            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-200/40 dark:border-amber-900/30 text-[10px] font-bold shadow-xs">
+              <AlertTriangle className="size-3.5 shrink-0" />
+              Review Required
+            </span>
+          )}
+        </div>
+        <p className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">
+          ID: {record.id.substring(0, 8)} • Group: {record.productGroupKey || 'None'} • Quality: {(record.confidence * 100).toFixed(0)}%
+        </p>
+      </div>
+
+      {/* Main Split Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* Left Column: Image Gallery & Extraction Evidence */}
+        <div className="lg:col-span-5 flex flex-col gap-4">
+          <Frame spacing="sm">
+            <FrameHeader>
+              <FrameTitle className="text-xs uppercase tracking-wider text-neutral-400">Source Images ({images.length})</FrameTitle>
+            </FrameHeader>
+
+            <FramePanel className="flex flex-col gap-3">
+              {images.length > 0 ? (
+                <>
+                  <div className="relative aspect-square w-full rounded-xl bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 overflow-hidden flex items-center justify-center shadow-inner">
+                    <img
+                      src={getImageUrl(currentImage.fileName)}
+                      alt="Source Product Image"
+                      className="max-h-full max-w-full object-contain"
+                    />
+                  </div>
+
+                  {/* Thumbnail Selector */}
+                  {images.length > 1 && (
+                    <div className="flex gap-1.5 overflow-x-auto pb-1">
+                      {images.map((img: any, idx: number) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setActiveImageIndex(idx)}
+                          className={cn(
+                            "px-2 py-1 text-[10px] font-bold rounded-lg border transition-all shrink-0",
+                            idx === activeImageIndex
+                              ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                              : "bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                          )}
+                        >
+                          {img.fileName.split('_').pop() || `Img ${idx + 1}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="aspect-square w-full rounded-xl bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 flex items-center justify-center text-xs font-semibold text-neutral-400">
+                  No images available
+                </div>
+              )}
+            </FramePanel>
+          </Frame>
+
+          {/* Evidence panel */}
+          <Frame spacing="xs">
+            <FrameHeader>
+              <FrameTitle className="text-xs uppercase tracking-wider text-neutral-400">Extraction Evidence</FrameTitle>
+            </FrameHeader>
+            <FramePanel className="flex flex-col gap-3">
+              <div className="flex p-0.5 bg-neutral-100 dark:bg-neutral-900 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setEvidenceTab('vision')}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-1 py-1 text-[10px] font-bold rounded-md transition-all",
+                    evidenceTab === 'vision'
+                      ? "bg-white dark:bg-neutral-800 text-indigo-600 dark:text-indigo-400 shadow-xs"
+                      : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                  )}
+                >
+                  <Sparkles className="size-3" />
+                  Structured
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEvidenceTab('ocr')}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-1 py-1 text-[10px] font-bold rounded-md transition-all",
+                    evidenceTab === 'ocr'
+                      ? "bg-white dark:bg-neutral-800 text-indigo-600 dark:text-indigo-400 shadow-xs"
+                      : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                  )}
+                >
+                  <FileText className="size-3" />
+                  OCR
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEvidenceTab('zxing')}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-1 py-1 text-[10px] font-bold rounded-md transition-all",
+                    evidenceTab === 'zxing'
+                      ? "bg-white dark:bg-neutral-800 text-indigo-600 dark:text-indigo-400 shadow-xs"
+                      : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                  )}
+                >
+                  <BarcodeIcon className="size-3" />
+                  ZXing
+                </button>
+              </div>
+
+              <div className="bg-neutral-900 text-neutral-100 rounded-lg p-2.5 text-[10px] font-mono max-h-[140px] overflow-y-auto border border-neutral-800 shadow-inner">
+                {evidenceTab === 'vision' && (
+                  <pre className="whitespace-pre-wrap leading-relaxed">
+                    {currentImage?.vision
+                      ? JSON.stringify(currentImage.vision, null, 2)
+                      : '// No VLM structured extraction available'}
+                  </pre>
+                )}
+                {evidenceTab === 'ocr' && (
+                  <pre className="whitespace-pre-wrap leading-relaxed">
+                    {currentImage?.ocr || '// No OCR text available'}
+                  </pre>
+                )}
+                {evidenceTab === 'zxing' && (
+                  <div className="flex flex-col gap-1 py-0.5 font-semibold text-neutral-300">
+                    <p>WASM Barcode Scanner (ZXing):</p>
+                    <p className="text-white text-xs mt-1">
+                      Detected: {currentImage?.zxing?.barcode ? (
+                        <span className="text-emerald-400 font-bold bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-900/30">
+                          {currentImage.zxing.barcode}
+                        </span>
+                      ) : (
+                        <span className="text-neutral-500 italic">None</span>
+                      )}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </FramePanel>
+          </Frame>
+        </div>
+
+        {/* Right Column: Editable fields */}
+        <div className="lg:col-span-7 flex flex-col gap-4">
+          <form onSubmit={handleSave} className="flex flex-col gap-4">
+            <Frame spacing="sm">
+              <FrameHeader>
+                <FrameTitle className="text-xs uppercase tracking-wider text-neutral-400">Master Data Columns</FrameTitle>
+              </FrameHeader>
+              <FramePanel className="flex flex-col gap-3 max-h-[380px] overflow-y-auto pr-1">
+                {IMDB_COLUMNS.map((colName) => {
+                  const metadata = record.fieldMetadata?.[colName]
+                  const confidence = metadata?.confidence ?? 0
+                  const source = metadata?.source ?? 'Merged'
+
+                  return (
+                    <div
+                      key={colName}
+                      className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center border-b border-neutral-100 dark:border-neutral-900 pb-2.5 last:border-0 last:pb-0"
+                    >
+                      <div className="sm:col-span-4 flex flex-col gap-0.5">
+                        <label className="text-[10px] font-extrabold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider">
+                          {EXCEL_HEADERS[colName]}
+                        </label>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[8px] font-bold text-neutral-400 dark:text-neutral-500 bg-neutral-100 dark:bg-neutral-800 px-1 py-0.2 rounded">
+                            {source}
+                          </span>
+                          <span className={cn(
+                            "text-[8px] font-extrabold px-1 py-0.2 rounded border",
+                            getConfidenceColorClass(confidence)
+                          )}>
+                            {(confidence * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="sm:col-span-8">
+                        <input
+                          type="text"
+                          value={formFields[colName]}
+                          onChange={(e) => handleFieldChange(colName, e.target.value)}
+                          className={cn(
+                            "w-full h-8 px-2.5 text-xs bg-white dark:bg-neutral-900 border rounded-lg focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium text-neutral-900 dark:text-neutral-50",
+                            confidence < 0.5 && !mutation.isPending && "border-rose-200 dark:border-rose-900/40 bg-rose-50/10",
+                            confidence >= 0.5 && confidence < 0.75 && !mutation.isPending && "border-amber-200 dark:border-amber-900/40 bg-amber-50/10",
+                            confidence >= 0.75 && !mutation.isPending && "border-neutral-200 dark:border-neutral-800"
+                          )}
+                          placeholder={`Enter ${EXCEL_HEADERS[colName].toLowerCase()}...`}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+              </FramePanel>
+            </Frame>
+
+            {/* Actions Footer */}
+            <div className="flex items-center justify-between gap-4 p-3 border border-neutral-200 dark:border-neutral-800 bg-neutral-50/30 dark:bg-neutral-950/20 rounded-2xl">
+              <div className="flex items-center gap-2">
+                {saveSuccess && (
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 animate-fade-in">
+                    <CheckCircle className="size-4 shrink-0" />
+                    Changes saved successfully
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="h-8 px-3.5 text-xs font-bold text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 rounded-xl transition-colors border border-transparent"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={mutation.isPending}
+                  className="flex items-center gap-1.5 h-8 px-4 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl disabled:opacity-50 transition-colors shadow-xs"
+                >
+                  {mutation.isPending ? (
+                    <Spinner size="xs" className="text-white" />
+                  ) : (
+                    <Save className="size-3.5" />
+                  )}
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Table Component ───────────────────────────────────────────────────
 export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
+  const [selectedRecord, setSelectedRecord] = useState<any | null>(null)
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
     // Show important columns by default, hide less critical ones
     const initial: Record<string, boolean> = {
@@ -436,7 +764,21 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
                 table.getRowModel().rows.map((row) => (
                   <tr
                     key={row.id}
-                    className="border-b border-neutral-100 dark:border-neutral-800/20 hover:bg-white/50 dark:hover:bg-neutral-900/30 transition-colors last:border-0"
+                    className="border-b border-neutral-100 dark:border-neutral-800/20 hover:bg-white/50 dark:hover:bg-neutral-900/30 transition-colors last:border-0 cursor-pointer"
+                    onClick={(e) => {
+                      const target = e.target as HTMLElement;
+                      if (
+                        target.closest('input') ||
+                        target.closest('button') ||
+                        target.closest('a') ||
+                        target.closest('svg') ||
+                        target.closest('span.size-1.5') ||
+                        target.closest('.pointer-events-none')
+                      ) {
+                        return;
+                      }
+                      setSelectedRecord(row.original);
+                    }}
                   >
                     {row.getVisibleCells().map((cell) => (
                       <td key={cell.id} className="px-4 py-2 border-neutral-100 dark:border-neutral-800/20">
@@ -491,6 +833,19 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
           </div>
         )}
       </div>
+
+      {selectedRecord && (
+        <Dialog open={!!selectedRecord} onOpenChange={(open) => !open && setSelectedRecord(null)}>
+          <DialogContent className="sm:max-w-2xl md:max-w-4xl lg:max-w-5xl w-full max-h-[90vh] overflow-y-auto p-6 bg-card dark:bg-neutral-950 rounded-2xl border border-neutral-200 dark:border-neutral-800 shadow-2xl">
+            <RecordDetailModal
+              record={selectedRecord}
+              orgId={orgId}
+              jobId={jobId}
+              onClose={() => setSelectedRecord(null)}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }

@@ -808,6 +808,17 @@ export async function processJob(
 				"success",
 			);
 
+			// Check if all fields are empty. If so, skip database insertion.
+			const allFieldsEmpty = IMDB_COLUMNS.every((col) => !finalRecord[col]);
+			if (allFieldsEmpty) {
+				await reporter.addLog(
+					"database",
+					`Skipped saving record for group ${groupKey} because all fields are empty`,
+					"info",
+				);
+				continue;
+			}
+
 			// 6. Compute Overall Weighted Confidence
 			let weightedSum = 0;
 			let weightTotal = 0;

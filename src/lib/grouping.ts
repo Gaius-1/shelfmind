@@ -41,6 +41,14 @@ function normalizeGroupKey(raw: string): string {
 }
 
 /**
+ * Normalizes a barcode string by removing non-digits and leading zeros.
+ */
+function cleanBarcode(raw: string): string {
+	if (!raw) return "";
+	return raw.trim().replace(/[^\d]/g, "").replace(/^0+/, "");
+}
+
+/**
  * Parses store ID and image sequence ID from a filename like S221234199_550719011.jpg
  */
 function parseFilename(
@@ -106,8 +114,8 @@ export function computeGroupSimilarity<T extends GroupableExtraction>(
 	a: T,
 	b: T,
 ): number {
-	const aBarcode = a.zxing?.barcode || a.vision?.BARCODE || "";
-	const bBarcode = b.zxing?.barcode || b.vision?.BARCODE || "";
+	const aBarcode = cleanBarcode(a.zxing?.barcode || a.vision?.BARCODE || "");
+	const bBarcode = cleanBarcode(b.zxing?.barcode || b.vision?.BARCODE || "");
 
 	// 1. Barcode Match (Strongest signal)
 	if (aBarcode && bBarcode && aBarcode === bBarcode) {
@@ -298,7 +306,7 @@ export function groupExtractions<T extends GroupableExtraction>(
 	const groups: Record<string, T[]> = {};
 	for (const group of activeGroups) {
 		const rep = getGroupRepresentative(group);
-		const extBarcode = rep.zxing?.barcode || rep.vision?.BARCODE || "";
+		const extBarcode = cleanBarcode(rep.zxing?.barcode || rep.vision?.BARCODE || "");
 		const extDesc =
 			rep.watermarkInfo?.productDescription || rep.productGroupKey || "";
 		const extDescKey = normalizeGroupKey(extDesc);
