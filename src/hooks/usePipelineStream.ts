@@ -73,7 +73,8 @@ export function usePipelineStream(jobId: string) {
                         ...node.data, 
                         status: msg.status,
                         ...(msg.processedCount !== undefined ? { processedCount: msg.processedCount } : {}),
-                        ...(msg.totalCount !== undefined ? { totalCount: msg.totalCount } : {})
+                        ...(msg.totalCount !== undefined ? { totalCount: msg.totalCount } : {}),
+                        ...(msg.badge !== undefined ? { badge: msg.badge } : {})
                       } 
                     }
                   : node

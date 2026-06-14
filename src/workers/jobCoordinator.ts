@@ -28,12 +28,16 @@ export class JobCoordinator extends DurableObject<Env> {
 				stored.nodes = stored.nodes.map((storedNode) => {
 					const initialNode = initialNodes.find((n) => n.id === storedNode.id);
 					if (initialNode) {
+						const cleanBadge = storedNode.data.badge === "WORKERS AI" ? undefined : (storedNode.data.badge || initialNode.data.badge);
 						return {
 							...storedNode,
 							data: {
 								...storedNode.data,
 								title: initialNode.data.title,
 								description: initialNode.data.description,
+								badge: cleanBadge,
+								processedCount: undefined,
+								totalCount: undefined,
 							},
 						};
 					}
@@ -99,6 +103,7 @@ export class JobCoordinator extends DurableObject<Env> {
 		status: NodeStatus,
 		processedCount?: number,
 		totalCount?: number,
+		badge?: string,
 	) {
 		this.state.nodes = this.state.nodes.map((node) =>
 			node.id === nodeId
@@ -109,6 +114,7 @@ export class JobCoordinator extends DurableObject<Env> {
 							status,
 							...(processedCount !== undefined ? { processedCount } : {}),
 							...(totalCount !== undefined ? { totalCount } : {}),
+							...(badge !== undefined ? { badge } : {}),
 						},
 					}
 				: node,
@@ -119,6 +125,7 @@ export class JobCoordinator extends DurableObject<Env> {
 			status,
 			processedCount,
 			totalCount,
+			badge,
 		});
 		await this.persist();
 	}

@@ -50,7 +50,6 @@ export const initialNodes: Node<CustomNodeData>[] = [
 			description: "Qwen2.5-VL extracts raw label text.",
 			iconType: "ocr",
 			status: "pending",
-			badge: "Workers AI",
 		},
 	},
 	{
@@ -62,7 +61,6 @@ export const initialNodes: Node<CustomNodeData>[] = [
 			description: "AI parses exact product fields.",
 			iconType: "vision",
 			status: "pending",
-			badge: "Workers AI",
 		},
 	},
 	{

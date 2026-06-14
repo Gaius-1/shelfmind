@@ -173,12 +173,6 @@ export const CustomNode = memo(({ data, isConnectable }: NodeProps) => {
 							<FrameTitle className="text-[13px]">{nodeData.title}</FrameTitle>
 						</div>
 						<div className="flex items-center gap-1.5">
-							{nodeData.processedCount !== undefined &&
-								nodeData.totalCount !== undefined && (
-									<span className="text-[10px] font-mono font-bold text-muted-foreground bg-muted px-1.5 py-0.5 rounded-sm">
-										{nodeData.processedCount} / {nodeData.totalCount}
-									</span>
-								)}
 							{nodeData.badge && (
 								<Badge
 									variant="outline"

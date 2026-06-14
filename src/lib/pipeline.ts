@@ -36,10 +36,22 @@ export class JobReporter {
 		}
 	}
 
-	async updateNodeState(nodeId: string, status: string) {
+	async updateNodeState(
+		nodeId: string,
+		status: string,
+		processedCount?: number,
+		totalCount?: number,
+		badge?: string,
+	) {
 		if (!this.stub) return;
 		try {
-			await this.stub.updateNodeState(nodeId, status);
+			await this.stub.updateNodeState(
+				nodeId,
+				status as any,
+				processedCount,
+				totalCount,
+				badge,
+			);
 		} catch (e) {
 			console.warn("[Reporter] Failed to update node state:", e);
 		}
@@ -245,7 +257,11 @@ async function processSingleImage(
 	imageBuffer: ArrayBuffer,
 	reporter: JobReporter,
 ): Promise<
-	RawExtractionPerImage & { productGroupKey: string; watermarkInfo?: any }
+	RawExtractionPerImage & {
+		productGroupKey: string;
+		watermarkInfo?: any;
+		durations?: { zxing: number; ocr: number; structured: number };
+	}
 > {
 	const imageHash = await hashBuffer(imageBuffer);
 
@@ -256,6 +272,7 @@ async function processSingleImage(
 	);
 
 	// 1. ZXing Barcode Scanning (<100ms)
+	const zxingStart = Date.now();
 	let barcodeResult: string | null = null;
 	try {
 		const barcodes = await readBarcodesFromImageFile(
@@ -292,8 +309,10 @@ async function processSingleImage(
 			"error",
 		);
 	}
+	const zxingDuration = Date.now() - zxingStart;
 
 	// 2. VLM OCR
+	const ocrStart = Date.now();
 	const ocrCacheKey = `extraction:${orgId}:${imageHash}:ocr`;
 	let ocrOutput = await getCachedResult(ocrCacheKey);
 	if (!ocrOutput) {
@@ -323,8 +342,10 @@ on its own line, prefixed with 'WATERMARK:'. Output all other product label text
 			"info",
 		);
 	}
+	const ocrDuration = Date.now() - ocrStart;
 
 	// 3. VLM Structured Data
+	const structuredStart = Date.now();
 	const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured`;
 	let structuredOutput = await getCachedResult(structuredCacheKey);
 	if (!structuredOutput) {
@@ -434,6 +455,7 @@ Return ONLY valid JSON. Do not include markdown wraps or code block formatting. 
 		productGroupKey =
 			brand || item ? `${brand} ${item}`.trim() : fileName.split(".")[0];
 	}
+	const structuredDuration = Date.now() - structuredStart;
 
 	return {
 		fileName,
@@ -442,6 +464,11 @@ Return ONLY valid JSON. Do not include markdown wraps or code block formatting. 
 		vision: visionData,
 		productGroupKey,
 		watermarkInfo,
+		durations: {
+			zxing: zxingDuration,
+			ocr: ocrDuration,
+			structured: structuredDuration,
+		},
 	};
 }
 
@@ -488,11 +515,19 @@ export async function processJob(
 			watermarkInfo?: any;
 		})[] = [];
 
+		let totalUploadMs = 0;
+		let totalZxing = 0;
+		let totalOcr = 0;
+		let totalStructured = 0;
+
 		for (let i = 0; i < imageKeys.length; i++) {
 			const key = imageKeys[i];
 			const fileName = key.split("/").pop() || `image_${i}`;
 
+			const uploadStart = Date.now();
 			const buffer = await getUpload(orgId, jobId, fileName);
+			totalUploadMs += Date.now() - uploadStart;
+
 			if (!buffer) {
 				console.warn(`[Pipeline] Could not load image file: ${fileName}`);
 				await reporter.addLog(
@@ -513,7 +548,8 @@ export async function processJob(
 			);
 
 			if (i === 0) {
-				await reporter.updateNodeState("upload", "completed");
+				const uploadBadge = totalUploadMs < 1000 ? `${totalUploadMs}ms` : `${(totalUploadMs / 1000).toFixed(1)}s`;
+				await reporter.updateNodeState("upload", "completed", undefined, undefined, uploadBadge);
 
 				await reporter.updateEdgeState("e1", true, "#10b981");
 				await reporter.updateEdgeState("e2", true, "#10b981");
@@ -524,21 +560,6 @@ export async function processJob(
 				await reporter.updateNodeState("structured", "active");
 			}
 
-			// Update extraction progress counts in the visualizer UI
-			await reporter.updateNodeState(
-				"zxing",
-				"active",
-				i + 1,
-				imageKeys.length,
-			);
-			await reporter.updateNodeState("ocr", "active", i + 1, imageKeys.length);
-			await reporter.updateNodeState(
-				"structured",
-				"active",
-				i + 1,
-				imageKeys.length,
-			);
-
 			const ext = await processSingleImage(
 				orgId,
 				jobId,
@@ -547,6 +568,12 @@ export async function processJob(
 				reporter,
 			);
 			extractions.push(ext);
+
+			if (ext.durations) {
+				totalZxing += ext.durations.zxing || 0;
+				totalOcr += ext.durations.ocr || 0;
+				totalStructured += ext.durations.structured || 0;
+			}
 
 			// Update progress incrementally
 			const progressPercent = Math.min(
@@ -560,17 +587,21 @@ export async function processJob(
 		}
 
 		// Extraction phase complete
-		await reporter.updateNodeState("zxing", "completed");
-		await reporter.updateNodeState("ocr", "completed");
-		await reporter.updateNodeState("structured", "completed");
+		const zxingBadge = totalZxing < 1000 ? `${totalZxing}ms` : `${(totalZxing / 1000).toFixed(1)}s`;
+		const ocrBadge = totalOcr < 1000 ? `${totalOcr}ms` : `${(totalOcr / 1000).toFixed(1)}s`;
+		const structuredBadge = totalStructured < 1000 ? `${totalStructured}ms` : `${(totalStructured / 1000).toFixed(1)}s`;
+
+		await reporter.updateNodeState("zxing", "completed", undefined, undefined, zxingBadge);
+		await reporter.updateNodeState("ocr", "completed", undefined, undefined, ocrBadge);
+		await reporter.updateNodeState("structured", "completed", undefined, undefined, structuredBadge);
 
 		await reporter.updateEdgeState("e4", true, "#10b981");
 		await reporter.updateEdgeState("e5", true, "#10b981");
 		await reporter.updateEdgeState("e6", true, "#10b981");
 
-		await reporter.updateNodeState("grouping", "active");
-
 		// 3. Fast Pre-Grouping
+		const groupingStart = Date.now();
+		await reporter.updateNodeState("grouping", "active");
 		await reporter.addLog(
 			"grouping",
 			"Performing fast metadata pre-grouping based on barcodes and watermark IDs...",
@@ -585,10 +616,13 @@ export async function processJob(
 			"success",
 		);
 
-		await reporter.updateNodeState("grouping", "completed");
+		const groupingDuration = Date.now() - groupingStart;
+		const groupingBadge = groupingDuration < 1000 ? `${groupingDuration}ms` : `${(groupingDuration / 1000).toFixed(1)}s`;
+		await reporter.updateNodeState("grouping", "completed", undefined, undefined, groupingBadge);
 		await reporter.updateEdgeState("e7", true, "#10b981");
 
 		// 4. Semantic Post-AI Matcher (Greedy Bipartite Matcher)
+		const postAiStart = Date.now();
 		await reporter.updateNodeState("post_ai_merging", "active");
 		await reporter.addLog(
 			"post_ai_merging",
@@ -600,10 +634,14 @@ export async function processJob(
 			`Semantic resolution completed. Final buckets count: ${Object.keys(groups).length}.`,
 			"success",
 		);
-		await reporter.updateNodeState("post_ai_merging", "completed");
+		const postAiDuration = Date.now() - postAiStart;
+		const postAiBadge = postAiDuration < 1000 ? `${Math.max(1, postAiDuration)}ms` : `${(postAiDuration / 1000).toFixed(1)}s`;
+		await reporter.updateNodeState("post_ai_merging", "completed", undefined, undefined, postAiBadge);
 		await reporter.updateEdgeState("e7_post", true, "#10b981");
 
 		await reporter.updateNodeState("aggregation", "active");
+		await reporter.updateNodeState("normalization", "active");
+		await reporter.updateNodeState("database", "active");
 
 		// 4. Multi-Image Aggregation per group
 		for (const [groupKey, groupExts] of Object.entries(groups)) {
@@ -752,11 +790,10 @@ export async function processJob(
 				"success",
 			);
 
-			// 5. Final Normalization Layer
-			await reporter.updateNodeState("aggregation", "completed");
-			await reporter.updateEdgeState("e8", true, "#10b981");
-			await reporter.updateNodeState("normalization", "active");
+			totalAggregationMs += Date.now() - aggStart;
 
+			// 5. Final Normalization Layer
+			const normStart = Date.now();
 			const finalRecord = normalizeRecord(aggregatedRecord);
 			await reporter.addLog(
 				"normalization",
@@ -776,14 +813,13 @@ export async function processJob(
 			const overallConfidence = weightTotal > 0 ? weightedSum / weightTotal : 0;
 			const flagged = overallConfidence < CONFIDENCE_THRESHOLD;
 
-			await reporter.updateNodeState("normalization", "completed");
-			await reporter.updateEdgeState("e9", true, "#10b981");
-			await reporter.updateNodeState("database", "active");
+			totalNormalizationMs += Date.now() - normStart;
 
 			// Get canonical product group tag name (pick the most common or first raw group key)
 			const groupTag = groupExts[0].productGroupKey;
 
 			// 7. Write IMDB Record to DB
+			const dbStart = Date.now();
 			const recordId = crypto.randomUUID();
 			await db.insert(imdbRecords).values({
 				id: recordId,
@@ -813,10 +849,21 @@ export async function processJob(
 				`Generated & saved final record: ${finalRecord.ITEM_NAME || groupTag}`,
 				"success",
 			);
+			totalDatabaseMs += Date.now() - dbStart;
 		}
 
-		await reporter.updateNodeState("database", "completed");
+		const aggBadge = totalAggregationMs < 1000 ? `${totalAggregationMs}ms` : `${(totalAggregationMs / 1000).toFixed(1)}s`;
+		const normBadge = totalNormalizationMs < 1000 ? `${totalNormalizationMs}ms` : `${(totalNormalizationMs / 1000).toFixed(1)}s`;
+		const dbBadge = totalDatabaseMs < 1000 ? `${totalDatabaseMs}ms` : `${(totalDatabaseMs / 1000).toFixed(1)}s`;
+
+		await reporter.updateNodeState("aggregation", "completed", undefined, undefined, aggBadge);
+		await reporter.updateEdgeState("e8", true, "#10b981");
+		await reporter.updateNodeState("normalization", "completed", undefined, undefined, normBadge);
+		await reporter.updateEdgeState("e9", true, "#10b981");
+		await reporter.updateNodeState("database", "completed", undefined, undefined, dbBadge);
 		await reporter.updateEdgeState("e10", true, "#10b981");
+
+		const dedupeStart = Date.now();
 		await reporter.updateNodeState("deduplication", "active");
 
 		// 8. Post-Job Duplicate Detection
@@ -916,7 +963,9 @@ export async function processJob(
 			`Committed ${newRecords.length} records and ${dupInserts.length} duplicate pairs`,
 			"success",
 		);
-		await reporter.updateNodeState("deduplication", "completed");
+		const dedupeDuration = Date.now() - dedupeStart;
+		const dedupeBadge = dedupeDuration < 1000 ? `${dedupeDuration}ms` : `${(dedupeDuration / 1000).toFixed(1)}s`;
+		await reporter.updateNodeState("deduplication", "completed", undefined, undefined, dedupeBadge);
 
 		console.log(`[Pipeline] Job ${jobId} finished successfully!`);
 	} catch (err: any) {
