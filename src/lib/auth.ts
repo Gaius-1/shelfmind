@@ -112,7 +112,7 @@ function getAuthInstance() {
 
 // Export a proxy so auth calls can be executed seamlessly
 export const auth = new Proxy({} as any, {
-  get(target, prop, receiver) {
+  get(_target, prop, receiver) {
     if (prop === 'then' || prop === '$$typeof' || prop === '__esModule' || prop === 'toJSON' || typeof prop === 'symbol') {
       return undefined
     }
@@ -120,7 +120,7 @@ export const auth = new Proxy({} as any, {
     const value = Reflect.get(instance, prop, receiver)
     return typeof value === 'function' ? value.bind(instance) : value
   },
-  set(target, prop, value, receiver) {
+  set(_target, prop, value, receiver) {
     if (prop === 'then' || prop === '$$typeof' || prop === '__esModule' || prop === 'toJSON' || typeof prop === 'symbol') {
       return true
     }
