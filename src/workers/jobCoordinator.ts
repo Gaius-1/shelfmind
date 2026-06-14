@@ -94,11 +94,32 @@ export class JobCoordinator extends DurableObject<Env> {
 
 	// --- RPC Methods for Background Pipeline to Push Updates ---
 
-	async updateNodeState(nodeId: string, status: NodeStatus) {
+	async updateNodeState(
+		nodeId: string,
+		status: NodeStatus,
+		processedCount?: number,
+		totalCount?: number,
+	) {
 		this.state.nodes = this.state.nodes.map((node) =>
-			node.id === nodeId ? { ...node, data: { ...node.data, status } } : node,
+			node.id === nodeId
+				? {
+						...node,
+						data: {
+							...node.data,
+							status,
+							...(processedCount !== undefined ? { processedCount } : {}),
+							...(totalCount !== undefined ? { totalCount } : {}),
+						},
+					}
+				: node,
 		);
-		this.broadcast({ type: "node_update", nodeId, status });
+		this.broadcast({
+			type: "node_update",
+			nodeId,
+			status,
+			processedCount,
+			totalCount,
+		});
 		await this.persist();
 	}
 

@@ -524,6 +524,21 @@ export async function processJob(
 				await reporter.updateNodeState("structured", "active");
 			}
 
+			// Update extraction progress counts in the visualizer UI
+			await reporter.updateNodeState(
+				"zxing",
+				"active",
+				i + 1,
+				imageKeys.length,
+			);
+			await reporter.updateNodeState("ocr", "active", i + 1, imageKeys.length);
+			await reporter.updateNodeState(
+				"structured",
+				"active",
+				i + 1,
+				imageKeys.length,
+			);
+
 			const ext = await processSingleImage(
 				orgId,
 				jobId,

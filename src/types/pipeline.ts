@@ -49,10 +49,8 @@ export const initialNodes: Node<CustomNodeData>[] = [
 			title: "VLM Raw OCR",
 			description: "Qwen2.5-VL extracts raw label text.",
 			iconType: "ocr",
-			status: "active",
+			status: "pending",
 			badge: "Workers AI",
-			processedCount: 5,
-			totalCount: 20,
 		},
 	},
 	{
