@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '#/components/ui/card.tsx'
-import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select.tsx'
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '#/components/ui/chart.tsx'
 import { Badge } from '#/components/reui/badge.tsx'
@@ -19,16 +19,16 @@ interface AnalyticsSparklinesProps {
 }
 
 // Dummy historical data for trendline visualization
-const generateSparkline = (points: number, min: number, max: number): SparklineData[] => {
+const generateSparkline = (points: number, min: number, max: number, decimals: number = 0): SparklineData[] => {
   return Array.from({ length: points }).map((_, i) => ({
-    time: `T${i}`,
-    value: Math.random() * (max - min) + min,
+    time: `Day ${i + 1}`,
+    value: Number((Math.random() * (max - min) + min).toFixed(decimals)),
   }))
 }
 
-const totalProductsData = generateSparkline(8, 1000, 1500)
-const confidenceData = generateSparkline(8, 0.8, 0.95)
-const flaggedData = generateSparkline(8, 20, 50).sort((a, b) => b.value - a.value)
+const totalProductsData = generateSparkline(8, 1000, 1500, 0)
+const confidenceData = generateSparkline(8, 0.8, 0.95, 2)
+const flaggedData = generateSparkline(8, 20, 50, 0).sort((a, b) => b.value - a.value)
 
 export function AnalyticsSparklines({ totalProducts, avgConfidence, flaggedCount }: AnalyticsSparklinesProps) {
   return (
@@ -50,6 +50,7 @@ export function AnalyticsSparklines({ totalProducts, avgConfidence, flaggedCount
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1 min-h-0">
         <SparklineCard 
           title="Total Products Processed"
+          shortLabel="Products"
           value={totalProducts.toLocaleString()}
           subtitle="Overall volume processed"
           data={totalProductsData}
@@ -61,6 +62,7 @@ export function AnalyticsSparklines({ totalProducts, avgConfidence, flaggedCount
         />
         <SparklineCard 
           title="Avg. Extraction Confidence"
+          shortLabel="Confidence"
           value={avgConfidence.toFixed(2)}
           subtitle="Hybrid AI determinism"
           data={confidenceData}
@@ -72,6 +74,7 @@ export function AnalyticsSparklines({ totalProducts, avgConfidence, flaggedCount
         />
         <SparklineCard 
           title="Flagged for Review"
+          shortLabel="Flagged"
           value={flaggedCount.toString()}
           subtitle="Needs human validation"
           data={flaggedData}
@@ -90,6 +93,7 @@ import { Frame, FramePanel } from '#/components/reui/frame.tsx'
 
 function SparklineCard({ 
   title, 
+  shortLabel,
   value, 
   subtitle, 
   data, 
@@ -100,6 +104,7 @@ function SparklineCard({
   trendVariant
 }: { 
   title: string, 
+  shortLabel: string,
   value: string, 
   subtitle: string, 
   data: SparklineData[], 
@@ -111,7 +116,7 @@ function SparklineCard({
 }) {
   const chartConfig = {
     value: {
-      label: title,
+      label: shortLabel,
       color: color,
     },
   } satisfies ChartConfig
@@ -132,12 +137,12 @@ function SparklineCard({
           </div>
           <div className="text-xs text-muted-foreground mt-1 font-medium">{subtitle}</div>
         </div>
-        <div className="pt-4 flex-1 pb-2">
-          <ChartContainer config={chartConfig} className="w-full h-full min-h-[80px]">
+        <div className="pt-2 flex-1 pb-4 px-2">
+          <ChartContainer config={chartConfig} className="w-full h-full min-h-[120px]">
             <AreaChart
               accessibilityLayer
               data={data}
-              margin={{ top: 5, right: 0, bottom: 0, left: 0 }}
+              margin={{ top: 10, right: 10, bottom: 0, left: -15 }}
             >
               <defs>
                 <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -149,13 +154,28 @@ function SparklineCard({
                   <feComposite in="SourceGraphic" in2="blur" operator="over" />
                 </filter>
               </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.5} />
+              <XAxis 
+                dataKey="time" 
+                tickLine={false} 
+                axisLine={false} 
+                tickMargin={8} 
+                className="text-[10px] fill-muted-foreground" 
+              />
+              <YAxis 
+                tickLine={false} 
+                axisLine={false} 
+                tickMargin={8} 
+                className="text-[10px] fill-muted-foreground"
+                tickFormatter={(val) => val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val}
+              />
               <ChartTooltip
                 cursor={false}
-                content={<ChartTooltipContent indicator="dot" className="min-w-36 gap-2.5" />}
+                content={<ChartTooltipContent indicator="dot" className="min-w-32 gap-1.5 p-2 shadow-xl" />}
               />
               <Area
                 dataKey="value"
-                type="natural"
+                type="monotone"
                 fill={`url(#${gradientId})`}
                 stroke={color}
                 strokeWidth={2}

@@ -32,7 +32,8 @@ export async function dispatchJob(
   setTimeout(async () => {
     try {
       const { processJob } = await import('./pipeline.ts')
-      await processJob(jobId, orgId, imageKeys)
+      const env = (process.env as any).JOB_COORDINATOR ? process.env : globalThis
+      await processJob(jobId, orgId, imageKeys, env)
     } catch (error) {
       console.error(`[Queue] Error running job ${jobId} in background:`, error)
     }

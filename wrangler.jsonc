@@ -45,5 +45,21 @@
       "binding": "CACHE",
       "id": "7290e230-be4b-461d-bffd-3ded77d84628"
     }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "JOB_COORDINATOR",
+        "class_name": "JobCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "JobCoordinator"
+      ]
+    }
   ]
 }

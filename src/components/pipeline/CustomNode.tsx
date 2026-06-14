@@ -38,6 +38,8 @@ export type CustomNodeData = {
   iconType: keyof typeof iconMap
   status?: 'pending' | 'active' | 'completed' | 'failed'
   badge?: string
+  processedCount?: number
+  totalCount?: number
 }
 
 export const CustomNode = memo(({ data, isConnectable }: NodeProps) => {
@@ -87,11 +89,18 @@ export const CustomNode = memo(({ data, isConnectable }: NodeProps) => {
               </div>
               <FrameTitle className="text-[13px]">{nodeData.title}</FrameTitle>
             </div>
-            {nodeData.badge && (
-              <Badge variant="outline" className="text-[10px] uppercase tracking-wider h-5 px-1.5">
-                {nodeData.badge}
-              </Badge>
-            )}
+            <div className="flex items-center gap-1.5">
+              {nodeData.processedCount !== undefined && nodeData.totalCount !== undefined && (
+                <span className="text-[10px] font-mono font-bold text-muted-foreground bg-muted px-1.5 py-0.5 rounded-sm">
+                  {nodeData.processedCount} / {nodeData.totalCount}
+                </span>
+              )}
+              {nodeData.badge && (
+                <Badge variant="outline" className="text-[10px] uppercase tracking-wider h-5 px-1.5">
+                  {nodeData.badge}
+                </Badge>
+              )}
+            </div>
           </FrameHeader>
           <div className="px-3 pb-3">
             <FrameDescription className="text-xs">

@@ -19,6 +19,48 @@ import { normalizeRecord, normalizeField } from './normalization.ts'
 import { getUpload } from './storage.ts'
 import { groupExtractions } from './grouping.ts'
 
+export class JobReporter {
+  private stub: any = null;
+
+  constructor(env: any, jobId: string) {
+    if (env && env.JOB_COORDINATOR) {
+      try {
+        const id = env.JOB_COORDINATOR.idFromName(jobId)
+        this.stub = env.JOB_COORDINATOR.get(id)
+      } catch (err) {
+        console.warn('[Pipeline] Could not resolve JOB_COORDINATOR binding')
+      }
+    }
+  }
+
+  async updateNodeState(nodeId: string, status: string) {
+    if (!this.stub) return
+    try {
+      await this.stub.updateNodeState(nodeId, status)
+    } catch (e) {
+      console.warn('[Reporter] Failed to update node state:', e)
+    }
+  }
+
+  async updateEdgeState(edgeId: string, animated: boolean, color: string) {
+    if (!this.stub) return
+    try {
+      await this.stub.updateEdgeState(edgeId, animated, color)
+    } catch (e) {
+      console.warn('[Reporter] Failed to update edge state:', e)
+    }
+  }
+
+  async addLog(nodeId: string, message: string, logType: 'info' | 'success' | 'warning' | 'error') {
+    if (!this.stub) return
+    try {
+      await this.stub.addLog(nodeId, message, logType)
+    } catch (e) {
+      console.warn('[Reporter] Failed to add log:', e)
+    }
+  }
+}
+
 const CACHE_DIR = join(process.cwd(), '.wrangler', 'mock-cache')
 
 // Utility to generate hash
@@ -156,9 +198,12 @@ async function processSingleImage(
   orgId: string,
   jobId: string,
   fileName: string,
-  imageBuffer: ArrayBuffer
+  imageBuffer: ArrayBuffer,
+  reporter: JobReporter
 ): Promise<RawExtractionPerImage & { productGroupKey: string }> {
   const imageHash = await hashBuffer(imageBuffer)
+  
+  await reporter.addLog('preprocess', `Image ${fileName} hash generated: ${imageHash}`, 'info')
 
   // 1. ZXing Barcode Scanning (<100ms)
   let barcodeResult: string | null = null
@@ -170,9 +215,13 @@ async function processSingleImage(
     if (barcodes && barcodes.length > 0) {
       barcodeResult = barcodes[0].text
       console.log(`[Pipeline] [ZXing] Found barcode ${barcodeResult} in ${fileName}`)
+      await reporter.addLog('zxing', `[${fileName}] Found barcode: ${barcodeResult}`, 'success')
+    } else {
+      await reporter.addLog('zxing', `[${fileName}] No barcode found`, 'warning')
     }
   } catch (err) {
     console.warn(`[Pipeline] [ZXing] Barcode scanning failed/skipped for ${fileName}`)
+    await reporter.addLog('zxing', `[${fileName}] Barcode scan failed`, 'error')
   }
 
   // 2. VLM OCR
@@ -180,10 +229,14 @@ async function processSingleImage(
   let ocrOutput = await getCachedResult(ocrCacheKey)
   if (!ocrOutput) {
     const prompt = 'Read all text visible on this product label, exactly as printed. Focus on capturing the product details, name tags, brand, manufacturer, weights, promotions, etc. Output the raw extracted text.'
+    await reporter.addLog('ocr', `[${fileName}] Calling Workers AI for OCR...`, 'info')
     ocrOutput = await runVisionModel(imageBuffer, prompt)
     if (ocrOutput) {
       await saveCachedResult(ocrCacheKey, ocrOutput)
+      await reporter.addLog('ocr', `[${fileName}] OCR text extracted`, 'success')
     }
+  } else {
+    await reporter.addLog('ocr', `[${fileName}] OCR result loaded from KV Cache`, 'info')
   }
 
   // 3. VLM Structured Data
@@ -212,10 +265,14 @@ Return ONLY valid JSON. Do not include markdown wraps or code block formatting. 
   "BARCODE": "...",
   ...
 }`
+    await reporter.addLog('vision', `[${fileName}] Calling Qwen2.5-VL for structured JSON...`, 'info')
     structuredOutput = await runVisionModel(imageBuffer, prompt)
     if (structuredOutput) {
       await saveCachedResult(structuredCacheKey, structuredOutput)
+      await reporter.addLog('vision', `[${fileName}] Structured data extracted`, 'success')
     }
+  } else {
+    await reporter.addLog('vision', `[${fileName}] Structured data loaded from KV Cache`, 'info')
   }
 
   // Parse structured JSON output
@@ -258,17 +315,28 @@ Return ONLY valid JSON. Do not include markdown wraps or code block formatting. 
 export async function processJob(
   jobId: string,
   orgId: string,
-  imageKeys: string[]
+  imageKeys: string[],
+  env: any = null
 ): Promise<void> {
+  const reporter = new JobReporter(env, jobId)
+  
   console.log(`[Pipeline] Starting Job ${jobId} for Organisation ${orgId}`)
-
+  
+  await reporter.updateNodeState('job-start', 'active')
+  await reporter.addLog('job-start', `Received Job ${jobId} with ${imageKeys.length} images`, 'info')
+  
   try {
+    await reporter.updateNodeState('job-start', 'completed')
+    await reporter.updateEdgeState('e-start-upload', true, '#10b981')
     // 1. Update job to PROCESSING
     await db.update(jobs)
       .set({ status: 'PROCESSING', progress: 10, startedAt: new Date().toISOString() })
       .where(eq(jobs.id, jobId))
 
     // 2. Load and process images in parallel
+    await reporter.updateNodeState('r2-upload', 'active')
+    await reporter.addLog('r2-upload', `Fetching ${imageKeys.length} images from storage`, 'info')
+    
     const extractions: (RawExtractionPerImage & { productGroupKey: string })[] = []
     
     for (let i = 0; i < imageKeys.length; i++) {
@@ -278,11 +346,30 @@ export async function processJob(
       const buffer = await getUpload(orgId, jobId, fileName)
       if (!buffer) {
         console.warn(`[Pipeline] Could not load image file: ${fileName}`)
+        await reporter.addLog('r2-upload', `Could not load image: ${fileName}`, 'error')
         continue
       }
+      await reporter.addLog('r2-upload', `Loaded ${fileName} successfully`, 'success')
 
       console.log(`[Pipeline] Processing image ${i + 1}/${imageKeys.length}: ${fileName}`)
-      const ext = await processSingleImage(orgId, jobId, fileName, buffer)
+      
+      // We activate preprocess, zxing, ocr, and vision nodes now
+      if (i === 0) {
+        await reporter.updateNodeState('r2-upload', 'completed')
+        await reporter.updateEdgeState('e-upload-preprocess', true, '#10b981')
+        await reporter.updateNodeState('preprocess', 'active')
+        await reporter.updateNodeState('preprocess', 'completed') // Mocked bypass for now
+        
+        await reporter.updateEdgeState('e-preprocess-zxing', true, '#10b981')
+        await reporter.updateEdgeState('e-preprocess-ocr', true, '#10b981')
+        await reporter.updateEdgeState('e-preprocess-vision', true, '#10b981')
+        
+        await reporter.updateNodeState('zxing', 'active')
+        await reporter.updateNodeState('ocr', 'active')
+        await reporter.updateNodeState('vision', 'active')
+      }
+      
+      const ext = await processSingleImage(orgId, jobId, fileName, buffer, reporter)
       extractions.push(ext)
 
       // Update progress incrementally
@@ -292,8 +379,20 @@ export async function processJob(
         .where(eq(jobs.id, jobId))
     }
 
+    // Extraction phase complete
+    await reporter.updateNodeState('zxing', 'completed')
+    await reporter.updateNodeState('ocr', 'completed')
+    await reporter.updateNodeState('vision', 'completed')
+    
+    await reporter.updateEdgeState('e-zxing-aggregate', true, '#10b981')
+    await reporter.updateEdgeState('e-ocr-aggregate', true, '#10b981')
+    await reporter.updateEdgeState('e-vision-aggregate', true, '#10b981')
+    
+    await reporter.updateNodeState('aggregate', 'active')
+
     // 3. Group by normalized Product Group Key (with weight-blocker)
     const groups = groupExtractions(extractions)
+    await reporter.addLog('aggregate', `Grouped ${extractions.length} images into ${Object.keys(groups).length} distinct products`, 'info')
 
     console.log(`[Pipeline] Grouped ${extractions.length} images into ${Object.keys(groups).length} products`)
 
@@ -428,7 +527,12 @@ export async function processJob(
         fieldMetadata,
         productGroupKey: groupTag
       })
+      await reporter.addLog('aggregate', `Generated final record for group: ${groupTag}`, 'success')
     }
+    
+    await reporter.updateNodeState('aggregate', 'completed')
+    await reporter.updateEdgeState('e-aggregate-db', true, '#10b981')
+    await reporter.updateNodeState('db-write', 'active')
 
     // 8. Post-Job Duplicate Detection
     // Collect IDs of records just written by this job
@@ -503,6 +607,9 @@ export async function processJob(
     await db.update(jobs)
       .set({ status: 'COMPLETED', progress: 100, completedAt: new Date().toISOString() })
       .where(eq(jobs.id, jobId))
+      
+    await reporter.addLog('db-write', `Committed ${newRecords.length} records and ${dupInserts.length} duplicate pairs to D1`, 'success')
+    await reporter.updateNodeState('db-write', 'completed')
 
     console.log(`[Pipeline] Job ${jobId} finished successfully!`)
 
@@ -513,5 +620,8 @@ export async function processJob(
     await db.update(jobs)
       .set({ status: 'FAILED', progress: 100, error: err?.message || String(err), completedAt: new Date().toISOString() })
       .where(eq(jobs.id, jobId))
+      
+    await reporter.addLog('job-start', `Job Failed: ${err?.message}`, 'error')
+    await reporter.updateNodeState('db-write', 'error')
   }
 }

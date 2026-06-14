@@ -16,6 +16,7 @@
 | Preprocessing           | Cloudflare Image Resizing (`cf.image`)            | WebP conversion, downscaling, edge sharpening |
 | AI / Vision             | Cloudflare Workers AI (Qwen2.5-VL)                | OCR, structured extraction, barcode fallback |
 | Queue                   | Cloudflare Queues                                 | Background job processing for image batches |
+| Observability           | Cloudflare Durable Objects + WebSockets           | Real-time pipeline visualizer state broadcasting |
 | Caching                 | Cloudflare KV                                     | Extraction result caching (7-day TTL) |
 | UI                      | shadcn/ui + Tailwind CSS                          | High-quality, accessible components |
 | Language                | TypeScript (strict)                               | End-to-end type safety |
@@ -68,6 +69,7 @@ shelfmind/
 │   │   └── utils.ts
 │   ├── hooks/                        # Custom React hooks
 │   │   ├── useImdbRecords.ts         # TanStack Query hook — records with adaptive polling
+│   │   ├── usePipelineStream.ts      # TanStack Query + WebSocket hook for visualizer
 │   │   ├── useProducts.ts            # TanStack Query hook — cross-job active records
 │   │   ├── useDuplicates.ts          # TanStack Query hook — pending duplicate pairs
 │   │   ├── useStats.ts               # TanStack Query hook — dashboard aggregate counters
@@ -82,6 +84,7 @@ shelfmind/
 │   │   │   ├── index.tsx             # Dashboard overview — stats, activity, charts
 │   │   │   ├── uploads.tsx           # Batch image upload page
 │   │   │   ├── processing-queue.tsx  # Active/historical job tracker
+│   │   │   ├── pipeline.tsx          # Real-time React Flow visualizer
 │   │   │   ├── review-queue.tsx      # Flagged records review table
 │   │   │   ├── review-queue.$recordId.tsx  # Individual record detail
 │   │   │   ├── products.tsx          # Cross-job master product repository
@@ -89,7 +92,7 @@ shelfmind/
 │   │   │   └── exports.tsx           # Export center
 │   │   └── api/                      # API route handlers (loaders & actions)
 │   │       ├── stats.ts              # GET /api/stats — org-scoped aggregate counters
-│   │       ├── jobs/                 # Job creation, status, export endpoints
+│   │       ├── jobs/                 # Job creation, status, stream proxy, export endpoints
 │   │       ├── products/             # GET /api/products — cross-job active records
 │   │       ├── records/              # PATCH /api/records/$recordId — inline field edit
 │   │       └── duplicates/           # GET + PATCH /api/duplicates — duplicate pair CRUD
@@ -140,6 +143,7 @@ processJob() in pipeline.ts
                     ↓
   ┌─────────────────────────────────────────────────────┐
   │  PHASE 2 — Parallel Extraction                      │
+  │  • Pipeline emits RPC updates to JobCoordinator DO  │
   │  • ZXing barcode per image                          │
   │  • Qwen2.5-VL structured extraction + OCR           │
   │  [Workers AI results KV-cached by imageHash]        │
@@ -264,6 +268,20 @@ if (env.PRODUCT_IMAGES) {
 } else {
   await fs.writeFile(`.wrangler/mock-r2/${key}`, ...)  // filesystem mock
 }
+```
+
+### Stateful Observability (Durable Objects)
+
+The extraction engine (`lib/pipeline.ts`) makes non-blocking RPC calls to the `JobCoordinator` Durable Object during execution. The DO then broadcasts these updates (e.g. `node_update`, `log`) down a WebSocket to the `PipelineVisualizer` UI.
+
+**Important distinction:** The Durable Object is strictly an *ephemeral broadcaster*. It does not store final state. D1 remains the single source of truth.
+
+```ts
+// pipeline.ts emitting an update
+await stub.addLog('ocr', 'Calling Workers AI...', 'info')
+
+// JobCoordinator.ts broadcasting
+this.broadcast({ type: 'log', nodeId, log: { ... } })
 ```
 
 ### Queue Pattern

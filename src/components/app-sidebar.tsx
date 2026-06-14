@@ -57,7 +57,7 @@ const navGroups: NavGroup[] = [
     label: "Processing",
     items: [
       { title: "Uploads", url: "/dashboard/uploads", icon: CloudUploadIcon },
-      { title: "Pipeline Workflow", url: "/dashboard/pipeline", icon: TaskDone01Icon },
+      { title: "Processing Queue", url: "/dashboard/processing-queue", icon: TaskDone01Icon },
       { title: "Review Queue", url: "/dashboard/review-queue", icon: CheckListIcon },
     ],
   },

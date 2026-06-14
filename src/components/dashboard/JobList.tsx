@@ -47,19 +47,19 @@ export function JobList({ jobs }: JobListProps) {
 
   if (jobs.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 border border-dashed border-neutral-200 dark:border-neutral-800 rounded-3xl bg-white/30 dark:bg-neutral-900/10 text-center gap-3">
-        <div className="p-3 bg-neutral-100 dark:bg-neutral-900 rounded-2xl text-neutral-400 dark:text-neutral-500">
+      <div className="flex flex-col items-center justify-center p-12 border border-dashed border-border rounded-3xl bg-card text-center gap-3">
+        <div className="p-3 bg-muted rounded-2xl text-muted-foreground">
           <ImageIcon className="size-6" />
         </div>
         <div className="flex flex-col gap-1 max-w-xs">
-          <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">No jobs processed yet</p>
-          <p className="text-xs text-neutral-400 dark:text-neutral-500">
+          <p className="text-sm font-semibold text-foreground">No jobs processed yet</p>
+          <p className="text-xs text-muted-foreground">
             Upload product images on the Uploads page to start the extraction pipeline.
           </p>
         </div>
         <Link
           to="/dashboard/uploads"
-          className="mt-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+          className="mt-2 text-xs font-bold text-primary hover:underline flex items-center gap-1"
         >
           Upload images <ArrowRight className="size-3" />
         </Link>
@@ -79,7 +79,7 @@ export function JobList({ jobs }: JobListProps) {
           <Card
             key={job.id}
             className={cn(
-              "border transition-all duration-200 bg-white/40 dark:bg-neutral-900/20 backdrop-blur-xl rounded-2xl overflow-hidden hover:border-neutral-300 dark:hover:border-neutral-800",
+              "border transition-all duration-200 bg-card rounded-2xl overflow-hidden hover:border-primary/50",
               isProcessing && "border-indigo-200 dark:border-indigo-950/40 ring-1 ring-indigo-500/10",
               isFailed && "border-rose-100 dark:border-rose-950/20"
             )}
@@ -88,7 +88,7 @@ export function JobList({ jobs }: JobListProps) {
               <div className="flex-1 flex flex-col gap-3.5">
                 {/* Job Info Header */}
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-mono font-bold text-neutral-600 dark:text-neutral-300 bg-neutral-100 dark:bg-neutral-800 px-2.5 py-0.5 rounded-lg">
+                  <span className="text-xs font-mono font-bold text-foreground bg-muted px-2.5 py-0.5 rounded-lg">
                     Batch #{job.id.substring(0, 8)}
                   </span>
                   
@@ -106,21 +106,21 @@ export function JobList({ jobs }: JobListProps) {
                     {job.status}
                   </span>
 
-                  <div className="h-3 w-px bg-neutral-200 dark:bg-neutral-800 hidden sm:block" />
+                  <div className="h-3 w-px bg-border hidden sm:block" />
 
-                  <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium flex items-center gap-1.5">
-                    <ImageIcon className="size-3.5 text-neutral-400" />
+                  <span className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
+                    <ImageIcon className="size-3.5 text-muted-foreground/70" />
                     {job.imageCount} product image{job.imageCount !== 1 && 's'}
                   </span>
                 </div>
 
                 {/* Progress bar */}
                 <div className="flex flex-col gap-1.5">
-                  <div className="flex justify-between items-center text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">
+                  <div className="flex justify-between items-center text-[11px] font-semibold text-muted-foreground">
                     <span>Extraction Progress</span>
                     <span>{job.progress}%</span>
                   </div>
-                  <div className="w-full h-2 bg-neutral-100 dark:bg-neutral-900 rounded-full overflow-hidden border border-neutral-200/20 dark:border-neutral-800/20">
+                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden border border-border">
                     <div
                       style={{ width: `${job.progress}%` }}
                       className={cn(
@@ -135,14 +135,14 @@ export function JobList({ jobs }: JobListProps) {
                 </div>
 
                 {/* Dates & Times */}
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-neutral-400 dark:text-neutral-500 font-medium">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground font-medium">
                   <span className="flex items-center gap-1">
-                    <Calendar className="size-3 text-neutral-400" />
+                    <Calendar className="size-3 text-muted-foreground/70" />
                     Started: {formatDate(job.startedAt)}
                   </span>
                   {job.completedAt && (
                     <span className="flex items-center gap-1">
-                      <Clock className="size-3 text-neutral-400" />
+                      <Clock className="size-3 text-muted-foreground/70" />
                       Duration: {getDuration(job.startedAt, job.completedAt)}
                     </span>
                   )}
@@ -175,23 +175,24 @@ export function JobList({ jobs }: JobListProps) {
                     Review Records
                     <ArrowRight className="size-3" />
                   </Link>
-                ) : isProcessing ? (
-                  <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 px-3 py-1.5">
+                ) : isProcessing || isPending ? (
+                  <Link
+                    to="/dashboard/pipeline"
+                    search={{ jobId: job.id } as any}
+                    className="flex items-center gap-1.5 h-9 px-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/40 dark:border-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-xs font-bold transition-all shadow-xs group"
+                  >
                     <span className="flex h-2 w-2 relative">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                     </span>
-                    Extracting...
-                  </div>
+                    View Live Pipeline
+                    <ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" />
+                  </Link>
                 ) : isFailed ? (
                   <span className="text-xs font-bold text-rose-500 px-3 py-1.5">
                     Failed Ingestion
                   </span>
-                ) : (
-                  <span className="text-xs font-bold text-amber-500 px-3 py-1.5">
-                    Queued...
-                  </span>
-                )}
+                ) : null}
               </div>
             </CardContent>
           </Card>

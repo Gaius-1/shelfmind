@@ -6,7 +6,7 @@ ShelfMind is a full-stack AI-powered image-to-item master data tool built for re
 
 ShelfMind is built as a multi-tenant SaaS. Each organisation has its own isolated workspace — members, jobs, IMDB records, and exports are all scoped to an organisation. Users can belong to multiple organisations and switch between them from the workspace switcher in the top-right of the app shell.
 
-Every step runs entirely on Cloudflare's infrastructure: Workers handle the API, Queues handle async processing, R2 stores images and exports, D1 stores structured records, and KV caches AI results. Authentication and multi-tenancy are handled by better-auth with the organisation plugin.
+Every step runs entirely on Cloudflare's infrastructure: Workers handle the API, Queues handle async processing, R2 stores images and exports, D1 stores structured records, KV caches AI results, and Durable Objects provide real-time stateful observability via WebSockets. Authentication and multi-tenancy are handled by better-auth with the organisation plugin.
 
 ---
 
@@ -27,6 +27,7 @@ ShelfMind eliminates that manual transcription work entirely. The pipeline pre-p
 /dashboard                    → Workspace overview, recent activity, analytics
 /uploads                      → Batch image upload and job submission
 /processing-queue             → Live job status and per-image extraction progress
+/pipeline                     → Real-time React Flow visualizer streaming from the Durable Object
 /review-queue                 → IMDB record review, inline editing, duplicate flags
 /review-queue/[recordId]      → Individual product record detail and edit page
 /product-repository           → Full searchable IMDB record table across all jobs
@@ -49,6 +50,7 @@ OVERVIEW
 PROCESSING
   Uploads
   Processing Queue
+  Pipeline Visualizer
   Review Queue
 
 DATA
@@ -136,12 +138,14 @@ member  → can upload, review, and export within the organisation
 * Live polling on `PENDING` and `PROCESSING` jobs via `GET /jobs/:jobId`
 * Poll hits KV cache first; falls back to D1
 * Job statuses: PENDING → PROCESSING → COMPLETED / FAILED
+* Clicking an active job → routes to the Pipeline Visualizer to watch the execution live
 * Clicking a completed job → routes to Review Queue filtered to that job
 
 ### Extraction Pipeline — Hybrid Approach
 
 * Processing Worker consumes the queue message and reads images from R2.
 * **Image Preprocessing:** Raw images are passed through Cloudflare's Image Resizing (`cf.image`) to downscale, convert to WebP, and apply sharpening (restoring text/barcode edge contrast) before inference. In local dev, `cf.image` is bypassed; raw buffers go directly to ZXing and mock AI.
+* **Stateful Observability:** As the Queue processes each image, it emits non-blocking RPC events to the `JobCoordinator` Durable Object, which broadcasts the live state via WebSockets to the frontend visualizer.
 * Three extractors run in parallel on each optimized image:
   * **ZXing** — deterministic barcode scan; never uses an AI model for barcode values
   * **Workers AI (text model)** — OCR extraction of all label text panels
@@ -318,6 +322,7 @@ Every piece of data in ShelfMind is scoped to an organisation. The tenancy bound
 * **Local Market Normalization:** Regex logic mapped to extract primary English values from bilingual wrappers and correctly normalize non-standard weights.
 * **Weight/Volume Grouping Blocker:** Products with identical names but different weights/volumes are forced into separate IMDB records — never merged.
 * Processing Queue page with live job status polling
+* Real-time Pipeline Visualizer using React Flow, Durable Objects, and WebSockets to observe the async pipeline executing
 * Review Queue with filter, sort, inline edit, and confidence indicators
 * Individual record detail page with full extraction evidence panel
 * Product Repository — cross-job searchable master record table (active records only)
@@ -359,6 +364,7 @@ Cloudflare Queues    → Async job dispatch with retry + DLQ
 Cloudflare R2        → Image storage + export file storage (namespaced by org)
 Cloudflare D1        → IMDB records, jobs, duplicate pairs, organisation profiles (all org-scoped)
 Cloudflare KV        → AI result cache (7-day TTL, keyed by org + image hash)
+Durable Objects      → Stateful observability (`JobCoordinator`) broadcasting pipeline updates via WebSockets
 Workers AI           → Qwen2.5-VL vision + OCR extraction
 cf.image             → Edge-native image compression and sharpening
 ```
