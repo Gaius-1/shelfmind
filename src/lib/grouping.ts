@@ -208,8 +208,9 @@ export function computeGroupSimilarity<T extends GroupableExtraction>(
 	if (fnA && fnB && fnA.storeId === fnB.storeId) {
 		const dist = Math.abs(fnA.imageId - fnB.imageId);
 		if (dist <= 3) {
-			score += 0.15;
-			weights += 0.15;
+			// Massive boost to ensure sequential photos of the same item bypass the side conflict blocker
+			score += 0.5;
+			weights += 0.5;
 		}
 	}
 
@@ -234,9 +235,18 @@ function hasConflictingSides<T extends GroupableExtraction>(
 
 	const isFront = (side: string) => side.toLowerCase() === "front";
 	const isBack = (side: string) =>
-		["back", "left", "right", "top", "bottom", "barcode"].includes(
-			side.toLowerCase(),
-		);
+		[
+			"back",
+			"left",
+			"right",
+			"top",
+			"bottom",
+			"barcode",
+			"first_side",
+			"second_side",
+			"side_1",
+			"side_2",
+		].includes(side.toLowerCase());
 
 	const getSides = (group: T[]) =>
 		group.map((x) => x.watermarkInfo?.side || x.vision?.SIDE || "");
@@ -282,10 +292,23 @@ export function groupExtractions<T extends GroupableExtraction>(
 				const repA = getGroupRepresentative(activeGroups[i]);
 				const repB = getGroupRepresentative(activeGroups[j]);
 				const score = computeGroupSimilarity(repA, repB);
+				// Apply group-wide side conflict blocker, EXCEPT when there is a barcode match, audit ID match, or sequential filename connection
+				if (hasConflictingSides(activeGroups[i], activeGroups[j])) {
+					const aBarcode = cleanBarcode(repA.zxing?.barcode || repA.vision?.BARCODE || "");
+					const bBarcode = cleanBarcode(repB.zxing?.barcode || repB.vision?.BARCODE || "");
+					const hasBarcodeMatch = aBarcode && bBarcode && aBarcode === bBarcode;
 
-				// Apply group-wide side conflict blocker, EXCEPT when there is a guaranteed barcode match (score === 1.0 from barcode)
-				if (score < 1.0 && hasConflictingSides(activeGroups[i], activeGroups[j])) {
-					continue;
+					const aAuditId = repA.watermarkInfo?.auditId || "";
+					const bAuditId = repB.watermarkInfo?.auditId || "";
+					const hasAuditMatch = aAuditId && bAuditId && aAuditId === bAuditId;
+
+					const fnA = parseFilename(repA.fileName);
+					const fnB = parseFilename(repB.fileName);
+					const isSequential = !!(fnA && fnB && fnA.storeId === fnB.storeId && Math.abs(fnA.imageId - fnB.imageId) <= 3);
+
+					if (!hasBarcodeMatch && !hasAuditMatch && !isSequential) {
+						continue;
+					}
 				}
 
 				if (score > bestScore) {
@@ -318,9 +341,13 @@ export function groupExtractions<T extends GroupableExtraction>(
 		const extDescKey = normalizeGroupKey(extDesc);
 		const uniqueId = rep.fileName.split(".")[0];
 
+		const extAuditId = rep.watermarkInfo?.auditId || "";
+
 		// Assign a stable key for this group
 		let groupKey = "";
-		if (extBarcode) {
+		if (extAuditId) {
+			groupKey = `audit_${extAuditId}`;
+		} else if (extBarcode) {
 			groupKey = `barcode_${extBarcode}`;
 		} else if (extDescKey) {
 			groupKey = `${extDescKey}__${uniqueId}`;

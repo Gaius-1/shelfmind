@@ -14,10 +14,14 @@ export interface WatermarkData {
 	side: string | null;
 }
 
+// Regex to detect an Audit Visit ID (e.g. GH00041222, NG0123, 00041222, CH000364912)
+const AUDIT_ID_REGEX = /^[A-Z]{0,3}\d{4,}/i;
+
 /**
  * Parses raw watermark text overlay from audit photos.
  * E.g., "GH000511418 ║Mok ║Front" or "GH000413323_A ║Sister Stew 10g Pwdr Sachet China ║Front"
  * or "GH000210815 THIS WAY CHOCOLATE DRINK NUMBERS POWDER PLASTIC SACHET ATONA FOOD GHANA · Front"
+ * or "CH000364912 U-FRESH ORANGE 350ML BOTTLE PLASTIC U-FRESH COMPANY LIMITED First_Side"
  */
 export function parseWatermark(raw: string): WatermarkData | null {
 	if (!raw) return null;
@@ -29,63 +33,75 @@ export function parseWatermark(raw: string): WatermarkData | null {
 	let middle = "";
 	let side: string | null = null;
 
+	const SIDE_REGEX = /^(Front|Back|Left|Right|Top|Bottom|Barcode|First_Side|Second_Side|Side_1|Side_2)$/i;
+
+	/**
+	 * Given a raw text chunk, extract the audit ID from the beginning if present.
+	 * Returns [auditId, remainder].
+	 */
+	function extractAuditId(text: string): [string, string] {
+		const words = text.split(" ");
+		if (words.length > 0 && AUDIT_ID_REGEX.test(words[0])) {
+			return [words[0], words.slice(1).join(" ")];
+		}
+		return ["", text];
+	}
+
 	// 1. Try splitting by double-bar '║' or single bar '|'
 	const barParts = cleanRaw.split(/[║|]/).map((p) => p.trim());
 	if (barParts.length >= 3) {
+		// "GH000511418 | Mok | Front"
 		auditId = barParts[0];
 		middle = barParts[1];
 		side = barParts[2];
 	} else if (barParts.length === 2) {
-		auditId = barParts[0];
-		middle = barParts[1];
+		// Could be "GH000511418 Mok | Front" or "Mok | Front"
+		const [extractedId, remainder] = extractAuditId(barParts[0]);
+		auditId = extractedId;
+		middle = remainder || barParts[0];
+		side = barParts[1];
 	} else {
-		// 2. Try splitting by dot '·' or bullet '•' or bullet '·'
+		// 2. Try splitting by dot '·' or bullet '•'
 		const dotParts = cleanRaw.split(/[·•\u00b7]/).map((p) => p.trim());
 		if (dotParts.length >= 2) {
-			const firstPart = dotParts[0];
 			side = dotParts[dotParts.length - 1];
-
-			// Split firstPart to extract auditId (first word)
-			const spaceIdx = firstPart.indexOf(" ");
-			if (spaceIdx !== -1) {
-				auditId = firstPart.slice(0, spaceIdx).trim();
-				middle = firstPart.slice(spaceIdx + 1).trim();
-			} else {
-				auditId = firstPart;
-			}
+			const firstPart = dotParts.slice(0, -1).join(" ");
+			const [extractedId, remainder] = extractAuditId(firstPart);
+			auditId = extractedId;
+			middle = remainder;
 		} else {
 			// 3. Fallback to space-split
 			const words = cleanRaw.split(" ");
-			if (words.length > 2) {
-				// Check if first word looks like Audit Visit ID
-				if (words[0].toUpperCase().startsWith("GH")) {
+			if (words.length > 1) {
+				let startIdx = 0;
+				if (AUDIT_ID_REGEX.test(words[0])) {
 					auditId = words[0];
-					// Check if last word is a Side
-					const lastWord = words[words.length - 1];
-					if (/^(Front|Back|Left|Right|Top|Bottom|Barcode)$/i.test(lastWord)) {
-						side = lastWord;
-						middle = words.slice(1, -1).join(" ");
-					} else {
-						middle = words.slice(1).join(" ");
-					}
+					startIdx = 1;
 				}
+				const lastWord = words[words.length - 1];
+				if (SIDE_REGEX.test(lastWord)) {
+					side = lastWord;
+					middle = words.slice(startIdx, -1).join(" ");
+				} else {
+					middle = words.slice(startIdx).join(" ");
+				}
+			} else {
+				middle = cleanRaw;
 			}
 		}
 	}
 
-	// Ensure auditId starts with GH or other expected prefix, or cleanup
-	auditId = auditId.trim();
 	middle = middle.trim();
 	if (side) side = side.trim();
 
-	if (!auditId && !middle) {
+	if (!middle) {
 		return null;
 	}
 
 	// Extract side from middle if not found yet
 	if (!side) {
 		const sideMatch = middle.match(
-			/\b(Front|Back|Left|Right|Top|Bottom|Barcode)\b/i,
+			/\b(Front|Back|Left|Right|Top|Bottom|Barcode|First_Side|Second_Side|Side_1|Side_2)\b/i,
 		);
 		if (sideMatch) {
 			side = sideMatch[1];

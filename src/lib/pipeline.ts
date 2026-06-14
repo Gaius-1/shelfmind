@@ -425,15 +425,35 @@ Return ONLY valid JSON. Do not include markdown wraps or code block formatting. 
 			}
 		}
 
-		if (parsed.WATERMARK_RAW) {
-			watermarkInfo = parseWatermark(parsed.WATERMARK_RAW);
+		let watermarkRawStr = parsed.WATERMARK_RAW;
+
+		// 1st Fallback: If AI missed WATERMARK_RAW, try to find Audit ID in raw OCR text
+		if (!watermarkRawStr && ocrOutput) {
+			const ocrMatch = ocrOutput.match(/[A-Z]{0,3}\d{4,}[^\n]+/i);
+			if (ocrMatch) {
+				watermarkRawStr = ocrMatch[0];
+				console.log(`[Pipeline] Fallback: Found watermark in OCR text: ${watermarkRawStr}`);
+			}
+		}
+
+		// 2nd Fallback: Check if the filename itself is the watermark string (common if app renames it)
+		if (!watermarkRawStr) {
+			const filenameWithoutExt = fileName.replace(/\.[^/.]+$/, "");
+			if (/^[A-Z]{0,3}\d{4,}/i.test(filenameWithoutExt)) {
+				watermarkRawStr = filenameWithoutExt;
+				console.log(`[Pipeline] Fallback: Using filename as watermark: ${watermarkRawStr}`);
+			}
+		}
+
+		if (watermarkRawStr) {
+			watermarkInfo = parseWatermark(watermarkRawStr);
 			if (watermarkInfo) {
 				if (watermarkInfo.productDescription) {
 					productGroupKey = watermarkInfo.productDescription;
 				}
 				await reporter.addLog(
 					"structured",
-					`[${fileName}] Detected Retail Audit Watermark: ${parsed.WATERMARK_RAW}`,
+					`[${fileName}] Detected Retail Audit Watermark: ${watermarkRawStr}`,
 					"success",
 				);
 				await reporter.addLog(
