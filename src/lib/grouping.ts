@@ -114,6 +114,14 @@ export function computeGroupSimilarity<T extends GroupableExtraction>(
 	a: T,
 	b: T,
 ): number {
+	const aAuditId = a.watermarkInfo?.auditId || "";
+	const bAuditId = b.watermarkInfo?.auditId || "";
+
+	// 0. Same Watermark Audit ID (Ultimate ground truth match)
+	if (aAuditId && bAuditId && aAuditId === bAuditId) {
+		return 1.0;
+	}
+
 	const aBarcode = cleanBarcode(a.zxing?.barcode || a.vision?.BARCODE || "");
 	const bBarcode = cleanBarcode(b.zxing?.barcode || b.vision?.BARCODE || "");
 
@@ -129,8 +137,6 @@ export function computeGroupSimilarity<T extends GroupableExtraction>(
 	}
 
 	// B. Watermark Audit ID conflict
-	const aAuditId = a.watermarkInfo?.auditId || "";
-	const bAuditId = b.watermarkInfo?.auditId || "";
 	if (aAuditId && bAuditId && aAuditId !== bAuditId) {
 		return 0;
 	}

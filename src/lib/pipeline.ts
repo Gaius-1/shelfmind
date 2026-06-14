@@ -441,6 +441,21 @@ Return ONLY valid JSON. Do not include markdown wraps or code block formatting. 
 					`[${fileName}] Parsed Audit ID: ${watermarkInfo.auditId} | Product: ${watermarkInfo.productDescription} | Side: ${watermarkInfo.side}`,
 					"info",
 				);
+
+				// Discard hallucinated barcodes that copy the audit ID from the watermark
+				if (watermarkInfo.auditId && visionData.BARCODE) {
+					const auditDigits = watermarkInfo.auditId.replace(/[^\d]/g, "").replace(/^0+/, "");
+					const visionDigits = visionData.BARCODE.replace(/[^\d]/g, "").replace(/^0+/, "");
+					if (auditDigits && visionDigits === auditDigits) {
+						console.log(`[Pipeline] Discarded watermark audit ID barcode hallucination: ${visionData.BARCODE}`);
+						await reporter.addLog(
+							"structured",
+							`[${fileName}] Discarded hallucinated barcode matching watermark audit ID: ${visionData.BARCODE}`,
+							"warning",
+						);
+						visionData.BARCODE = "";
+					}
+				}
 			}
 		}
 	} catch (err) {
