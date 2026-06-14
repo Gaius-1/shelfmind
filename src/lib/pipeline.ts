@@ -118,18 +118,29 @@ async function runVisionModel(
 ): Promise<string> {
 	const aiBinding = getBinding("AI");
 
+	// Llama 3.2 Vision requires base64-encoded image + messages array format
+	const base64Image = Buffer.from(imageBuffer).toString('base64')
+
 	if (aiBinding) {
 		try {
-			console.log("[Pipeline] Calling Cloudflare AI binding...");
+			console.log("[Pipeline] Calling Cloudflare AI binding (Llama 3.2 Vision)...");
 			const input = {
-				image: [...new Uint8Array(imageBuffer)],
-				prompt,
+				image: base64Image,
+				messages: [
+					{ role: "system", content: "You are a precise product data extraction assistant. Follow all instructions exactly." },
+					{ role: "user", content: prompt },
+				],
 			};
 			const result = await aiBinding.run(
 				"@cf/meta/llama-3.2-11b-vision-instruct",
 				input,
 			);
-			return result?.response || "";
+			// Llama 3.2 Vision returns { response: string } or { choices: [...] }
+			const text = (result as any)?.response 
+				|| (result as any)?.choices?.[0]?.message?.content 
+				|| "";
+			console.log("[Pipeline] AI response preview:", String(text).substring(0, 200));
+			return text;
 		} catch (err) {
 			console.error("[Pipeline] Cloudflare AI binding failed:", err);
 			throw err;
@@ -151,8 +162,11 @@ async function runVisionModel(
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify({
-						image: [...new Uint8Array(imageBuffer)],
-						prompt,
+						image: base64Image,
+						messages: [
+							{ role: "system", content: "You are a precise product data extraction assistant. Follow all instructions exactly." },
+							{ role: "user", content: prompt },
+						],
 					}),
 				},
 			);
@@ -164,7 +178,9 @@ async function runVisionModel(
 			}
 
 			const json = await response.json();
-			return (json as any).result?.response || "";
+			return (json as any).result?.response 
+				|| (json as any).result?.choices?.[0]?.message?.content 
+				|| "";
 		} catch (err) {
 			console.error("[Pipeline] Cloudflare AI REST API failed:", err);
 			throw err;

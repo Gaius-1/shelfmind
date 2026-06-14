@@ -7,25 +7,32 @@ export interface Env {
 }
 
 export class JobCoordinator extends DurableObject<Env> {
-  // We keep the state in memory, but could persist to DO SQLite
+  // State is persisted to DO SQLite so it survives hibernation and page refreshes
   private state: PipelineState
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
-    
-    // Initialize default state
-    // In a real app, we might restore this from `ctx.storage`
+
+    // Initialize with defaults — will be overwritten by blockConcurrencyWhile restore below
     this.state = {
-      jobId: '', // Will be set on first connect or init
+      jobId: '',
       nodes: [...initialNodes],
       edges: [...initialEdges],
       logs: {},
     }
 
-    // Set up WebSocket hibernation
-    this.ctx.getWebSockets().forEach((ws) => {
-      // Re-hydrate any necessary state for re-attached websockets if needed
+    // Restore persisted state from storage on cold start (survives hibernation)
+    this.ctx.blockConcurrencyWhile(async () => {
+      const stored = await this.ctx.storage.get<PipelineState>('pipelineState')
+      if (stored) {
+        this.state = stored
+      }
     })
+  }
+
+  // Persist state to DO storage after every mutation
+  private async persist() {
+    await this.ctx.storage.put('pipelineState', this.state)
   }
 
   // --- REST Endpoint for TanStack Query (Initial Fetch) ---
@@ -75,6 +82,7 @@ export class JobCoordinator extends DurableObject<Env> {
       node.id === nodeId ? { ...node, data: { ...node.data, status } } : node
     )
     this.broadcast({ type: 'node_update', nodeId, status })
+    await this.persist()
   }
 
   async updateEdgeState(edgeId: string, animated: boolean, color: string) {
@@ -82,6 +90,7 @@ export class JobCoordinator extends DurableObject<Env> {
       edge.id === edgeId ? { ...edge, animated, style: { ...edge.style, stroke: color } } : edge
     )
     this.broadcast({ type: 'edge_update', edgeId, animated, color })
+    await this.persist()
   }
 
   async addLog(nodeId: string, message: string, logType: 'info' | 'success' | 'warning' | 'error') {
@@ -98,6 +107,7 @@ export class JobCoordinator extends DurableObject<Env> {
     this.state.logs[nodeId].push(newLog)
 
     this.broadcast({ type: 'log', nodeId, log: newLog })
+    await this.persist()
   }
 
   // Helper to send to all connected clients
