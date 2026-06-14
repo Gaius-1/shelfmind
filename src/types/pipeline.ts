@@ -1,7 +1,7 @@
 import type { Edge, Node } from '@xyflow/react'
 import type { CustomNodeData } from '../components/pipeline/CustomNode.tsx'
 
-export type NodeStatus = 'pending' | 'active' | 'completed' | 'error'
+export type NodeStatus = 'pending' | 'active' | 'completed' | 'failed'
 
 export interface LogEntry {
   id: string

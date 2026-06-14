@@ -1,250 +1,302 @@
-import { readBarcodesFromImageFile } from 'zxing-wasm'
-import { db } from '../db/index.ts'
-import { jobs, imdbRecords, duplicatePairs } from '../db/schema.ts'
-import { eq, and, ne } from 'drizzle-orm'
-import { join } from 'path'
-import { existsSync } from 'fs'
+import { readBarcodesFromImageFile } from "zxing-wasm";
+import { db } from "../db/index.ts";
+import { jobs, imdbRecords, duplicatePairs } from "../db/schema.ts";
+import { eq, and, ne } from "drizzle-orm";
+import { join } from "path";
+import { existsSync } from "fs";
 import {
-  IMDB_COLUMNS,
-  FIELD_WEIGHTS,
-  CONFIDENCE_THRESHOLD,
-  FIELD_EMPTY_THRESHOLD,
-  type ImdbColumnName,
-  type FieldMeta,
-  type RawExtraction,
-  type RawExtractionPerImage,
-  type ImdbRecord
-} from '../types/imdb.ts'
-import { normalizeRecord, normalizeField } from './normalization.ts'
-import { getUpload } from './storage.ts'
-import { groupExtractions } from './grouping.ts'
-import { getBinding } from './cloudflare.ts'
+	IMDB_COLUMNS,
+	FIELD_WEIGHTS,
+	CONFIDENCE_THRESHOLD,
+	FIELD_EMPTY_THRESHOLD,
+	type ImdbColumnName,
+	type FieldMeta,
+	type RawExtraction,
+	type RawExtractionPerImage,
+	type ImdbRecord,
+	type ExtractionSource,
+} from "../types/imdb.ts";
+import { normalizeRecord, normalizeField } from "./normalization.ts";
+import { getUpload } from "./storage.ts";
+import { groupExtractions } from "./grouping.ts";
+import { getBinding } from "./cloudflare.ts";
+import { parseWatermark } from "./watermark-parser.ts";
 
 export class JobReporter {
-  private stub: any = null;
+	private stub: any = null;
 
-  constructor(env: any, jobId: string) {
-    if (env && env.JOB_COORDINATOR) {
-      try {
-        const id = env.JOB_COORDINATOR.idFromName(jobId)
-        this.stub = env.JOB_COORDINATOR.get(id)
-      } catch (err) {
-        console.warn('[Pipeline] Could not resolve JOB_COORDINATOR binding')
-      }
-    }
-  }
+	constructor(env: any, jobId: string) {
+		if (env && env.JOB_COORDINATOR) {
+			try {
+				const id = env.JOB_COORDINATOR.idFromName(jobId);
+				this.stub = env.JOB_COORDINATOR.get(id);
+			} catch (err) {
+				console.warn("[Pipeline] Could not resolve JOB_COORDINATOR binding");
+			}
+		}
+	}
 
-  async updateNodeState(nodeId: string, status: string) {
-    if (!this.stub) return
-    try {
-      await this.stub.updateNodeState(nodeId, status)
-    } catch (e) {
-      console.warn('[Reporter] Failed to update node state:', e)
-    }
-  }
+	async updateNodeState(nodeId: string, status: string) {
+		if (!this.stub) return;
+		try {
+			await this.stub.updateNodeState(nodeId, status);
+		} catch (e) {
+			console.warn("[Reporter] Failed to update node state:", e);
+		}
+	}
 
-  async updateEdgeState(edgeId: string, animated: boolean, color: string) {
-    if (!this.stub) return
-    try {
-      await this.stub.updateEdgeState(edgeId, animated, color)
-    } catch (e) {
-      console.warn('[Reporter] Failed to update edge state:', e)
-    }
-  }
+	async updateEdgeState(edgeId: string, animated: boolean, color: string) {
+		if (!this.stub) return;
+		try {
+			await this.stub.updateEdgeState(edgeId, animated, color);
+		} catch (e) {
+			console.warn("[Reporter] Failed to update edge state:", e);
+		}
+	}
 
-  async addLog(nodeId: string, message: string, logType: 'info' | 'success' | 'warning' | 'error') {
-    if (!this.stub) return
-    try {
-      await this.stub.addLog(nodeId, message, logType)
-    } catch (e) {
-      console.warn('[Reporter] Failed to add log:', e)
-    }
-  }
+	async addLog(
+		nodeId: string,
+		message: string,
+		logType: "info" | "success" | "warning" | "error",
+	) {
+		if (!this.stub) return;
+		try {
+			await this.stub.addLog(nodeId, message, logType);
+		} catch (e) {
+			console.warn("[Reporter] Failed to add log:", e);
+		}
+	}
 }
 
-const CACHE_DIR = join(process.cwd(), '.wrangler', 'mock-cache')
+const CACHE_DIR = join(process.cwd(), ".wrangler", "mock-cache");
 
 // Utility to generate hash
 async function hashBuffer(buffer: ArrayBuffer | Buffer): Promise<string> {
-  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+	const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+	const hashArray = Array.from(new Uint8Array(hashBuffer));
+	return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 // Check for KV Cache namespace binding
 function getCacheKV() {
-  return getBinding('CACHE')
+	return getBinding("CACHE");
 }
 
 // Caching helper
 async function getCachedResult(key: string): Promise<string | null> {
-  const kv = getCacheKV()
-  if (kv) {
-    return await kv.get(key)
-  }
+	const kv = getCacheKV();
+	if (kv) {
+		return await kv.get(key);
+	}
 
-  // Local filesystem fallback
-  const filePath = join(CACHE_DIR, `${key.replace(/:/g, '_')}.json`)
-  if (existsSync(filePath)) {
-    return await Bun.file(filePath).text()
-  }
-  return null
+	// Local filesystem fallback
+	const filePath = join(CACHE_DIR, `${key.replace(/:/g, "_")}.json`);
+	if (existsSync(filePath)) {
+		return await Bun.file(filePath).text();
+	}
+	return null;
 }
 
 async function saveCachedResult(key: string, value: string): Promise<void> {
-  const kv = getCacheKV()
-  if (kv) {
-    await kv.put(key, value, { expirationTtl: 7 * 24 * 60 * 60 }) // 7 days
-    return
-  }
+	const kv = getCacheKV();
+	if (kv) {
+		await kv.put(key, value, { expirationTtl: 7 * 24 * 60 * 60 }); // 7 days
+		return;
+	}
 
-  // Local filesystem fallback
-  const filePath = join(CACHE_DIR, `${key.replace(/:/g, '_')}.json`)
-  await Bun.write(filePath, value)
+	// Local filesystem fallback
+	const filePath = join(CACHE_DIR, `${key.replace(/:/g, "_")}.json`);
+	await Bun.write(filePath, value);
 }
 
 /**
  * Runs the VLM model (Qwen2.5-VL-7b-instruct) on Cloudflare Workers AI or via REST API/Mock fallback.
  */
 async function runVisionModel(
-  imageBuffer: ArrayBuffer | Buffer,
-  prompt: string
+	imageBuffer: ArrayBuffer | Buffer,
+	prompt: string,
 ): Promise<string> {
-  const aiBinding = getBinding('AI')
+	const aiBinding = getBinding("AI");
 
-  if (aiBinding) {
-    try {
-      console.log('[Pipeline] Calling Cloudflare AI binding...')
-      const input = {
-        image: [...new Uint8Array(imageBuffer)],
-        prompt,
-      }
-      const result = await aiBinding.run('@cf/qwen/qwen2.5-vl-7b-instruct', input)
-      return result?.response || ''
-    } catch (err) {
-      console.error('[Pipeline] Cloudflare AI binding failed:', err)
-      throw err
-    }
-  }
+	if (aiBinding) {
+		try {
+			console.log("[Pipeline] Calling Cloudflare AI binding...");
+			const input = {
+				image: [...new Uint8Array(imageBuffer)],
+				prompt,
+			};
+			const result = await aiBinding.run(
+				"@cf/qwen/qwen2.5-vl-7b-instruct",
+				input,
+			);
+			return result?.response || "";
+		} catch (err) {
+			console.error("[Pipeline] Cloudflare AI binding failed:", err);
+			throw err;
+		}
+	}
 
-  const accountId = getBinding('CLOUDFLARE_ACCOUNT_ID')
-  const apiToken = getBinding('CLOUDFLARE_API_TOKEN')
+	const accountId = getBinding("CLOUDFLARE_ACCOUNT_ID");
+	const apiToken = getBinding("CLOUDFLARE_API_TOKEN");
 
-  if (accountId && apiToken) {
-    try {
-      console.log('[Pipeline] Calling Cloudflare AI REST API...')
-      const response = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/qwen/qwen2.5-vl-7b-instruct`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            image: [...new Uint8Array(imageBuffer)],
-            prompt,
-          }),
-        }
-      )
+	if (accountId && apiToken) {
+		try {
+			console.log("[Pipeline] Calling Cloudflare AI REST API...");
+			const response = await fetch(
+				`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/qwen/qwen2.5-vl-7b-instruct`,
+				{
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${apiToken}`,
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						image: [...new Uint8Array(imageBuffer)],
+						prompt,
+					}),
+				},
+			);
 
-      if (!response.ok) {
-        throw new Error(`Cloudflare AI API returned ${response.status}: ${await response.text()}`)
-      }
+			if (!response.ok) {
+				throw new Error(
+					`Cloudflare AI API returned ${response.status}: ${await response.text()}`,
+				);
+			}
 
-      const json = await response.json()
-      return (json as any).result?.response || ''
-    } catch (err) {
-      console.error('[Pipeline] Cloudflare AI REST API failed:', err)
-      throw err
-    }
-  }
+			const json = await response.json();
+			return (json as any).result?.response || "";
+		} catch (err) {
+			console.error("[Pipeline] Cloudflare AI REST API failed:", err);
+			throw err;
+		}
+	}
 
-  // Offline mock fallback
-  console.log('[Pipeline] Using offline VLM mock responses from fixtures')
-  const imageHash = await hashBuffer(imageBuffer)
-  const mockAiDir = join(process.cwd(), '.wrangler', 'mock-ai')
-  const fixturePath = join(mockAiDir, `${imageHash}.json`)
-  const fallbackPath = join(mockAiDir, 'default.json')
+	// Offline mock fallback
+	console.log("[Pipeline] Using offline VLM mock responses from fixtures");
+	const imageHash = await hashBuffer(imageBuffer);
+	const mockAiDir = join(process.cwd(), ".wrangler", "mock-ai");
+	const fixturePath = join(mockAiDir, `${imageHash}.json`);
+	const fallbackPath = join(mockAiDir, "default.json");
 
-  let fixtureContent = ''
-  if (existsSync(fixturePath)) {
-    fixtureContent = await Bun.file(fixturePath).text()
-  } else if (existsSync(fallbackPath)) {
-    fixtureContent = await Bun.file(fallbackPath).text()
-  }
+	let fixtureContent = "";
+	if (existsSync(fixturePath)) {
+		fixtureContent = await Bun.file(fixturePath).text();
+	} else if (existsSync(fallbackPath)) {
+		fixtureContent = await Bun.file(fallbackPath).text();
+	}
 
-  if (fixtureContent) {
-    try {
-      const parsed = JSON.parse(fixtureContent)
-      if (prompt.includes('Read all text')) {
-        return parsed.ocr || ''
-      } else {
-        return typeof parsed.structured === 'string'
-          ? parsed.structured
-          : JSON.stringify(parsed.structured || {})
-      }
-    } catch (err) {
-      console.error('[Pipeline] Failed to parse AI mock fixture:', err)
-    }
-  }
+	if (fixtureContent) {
+		try {
+			const parsed = JSON.parse(fixtureContent);
+			if (prompt.includes("Read all text")) {
+				return parsed.ocr || "";
+			} else {
+				return typeof parsed.structured === "string"
+					? parsed.structured
+					: JSON.stringify(parsed.structured || {});
+			}
+		} catch (err) {
+			console.error("[Pipeline] Failed to parse AI mock fixture:", err);
+		}
+	}
 
-  return prompt.includes('Read all text') ? '' : '{}'
+	return prompt.includes("Read all text") ? "" : "{}";
 }
 
 /**
  * Process a single image: runs ZXing, OCR VLM, and Structured VLM.
  */
 async function processSingleImage(
-  orgId: string,
-  jobId: string,
-  fileName: string,
-  imageBuffer: ArrayBuffer,
-  reporter: JobReporter
-): Promise<RawExtractionPerImage & { productGroupKey: string }> {
-  const imageHash = await hashBuffer(imageBuffer)
-  
-  await reporter.addLog('preprocess', `Image ${fileName} hash generated: ${imageHash}`, 'info')
+	orgId: string,
+	jobId: string,
+	fileName: string,
+	imageBuffer: ArrayBuffer,
+	reporter: JobReporter,
+): Promise<
+	RawExtractionPerImage & { productGroupKey: string; watermarkInfo?: any }
+> {
+	const imageHash = await hashBuffer(imageBuffer);
 
-  // 1. ZXing Barcode Scanning (<100ms)
-  let barcodeResult: string | null = null
-  try {
-    const barcodes = await readBarcodesFromImageFile(new Uint8Array(imageBuffer), {
-      tryHarder: true,
-      formats: ['EAN_13', 'EAN_8', 'UPC_A', 'UPC_E', 'CODE_128', 'CODE_39'],
-    })
-    if (barcodes && barcodes.length > 0) {
-      barcodeResult = barcodes[0].text
-      console.log(`[Pipeline] [ZXing] Found barcode ${barcodeResult} in ${fileName}`)
-      await reporter.addLog('zxing', `[${fileName}] Found barcode: ${barcodeResult}`, 'success')
-    } else {
-      await reporter.addLog('zxing', `[${fileName}] No barcode found`, 'warning')
-    }
-  } catch (err) {
-    console.warn(`[Pipeline] [ZXing] Barcode scanning failed/skipped for ${fileName}`)
-    await reporter.addLog('zxing', `[${fileName}] Barcode scan failed`, 'error')
-  }
+	await reporter.addLog(
+		"preprocess",
+		`Image ${fileName} hash generated: ${imageHash}`,
+		"info",
+	);
 
-  // 2. VLM OCR
-  const ocrCacheKey = `extraction:${orgId}:${imageHash}:ocr`
-  let ocrOutput = await getCachedResult(ocrCacheKey)
-  if (!ocrOutput) {
-    const prompt = 'Read all text visible on this product label, exactly as printed. Focus on capturing the product details, name tags, brand, manufacturer, weights, promotions, etc. Output the raw extracted text.'
-    await reporter.addLog('ocr', `[${fileName}] Calling Workers AI for OCR...`, 'info')
-    ocrOutput = await runVisionModel(imageBuffer, prompt)
-    if (ocrOutput) {
-      await saveCachedResult(ocrCacheKey, ocrOutput)
-      await reporter.addLog('ocr', `[${fileName}] OCR text extracted`, 'success')
-    }
-  } else {
-    await reporter.addLog('ocr', `[${fileName}] OCR result loaded from KV Cache`, 'info')
-  }
+	// 1. ZXing Barcode Scanning (<100ms)
+	let barcodeResult: string | null = null;
+	try {
+		const barcodes = await readBarcodesFromImageFile(
+			new Uint8Array(imageBuffer),
+			{
+				tryHarder: true,
+				formats: ["EAN_13", "EAN_8", "UPC_A", "UPC_E", "CODE_128", "CODE_39"],
+			},
+		);
+		if (barcodes && barcodes.length > 0) {
+			barcodeResult = barcodes[0].text;
+			console.log(
+				`[Pipeline] [ZXing] Found barcode ${barcodeResult} in ${fileName}`,
+			);
+			await reporter.addLog(
+				"zxing",
+				`[${fileName}] Found barcode: ${barcodeResult}`,
+				"success",
+			);
+		} else {
+			await reporter.addLog(
+				"zxing",
+				`[${fileName}] No barcode found`,
+				"warning",
+			);
+		}
+	} catch (err) {
+		console.warn(
+			`[Pipeline] [ZXing] Barcode scanning failed/skipped for ${fileName}`,
+		);
+		await reporter.addLog(
+			"zxing",
+			`[${fileName}] Barcode scan failed`,
+			"error",
+		);
+	}
 
-  // 3. VLM Structured Data
-  const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured`
-  let structuredOutput = await getCachedResult(structuredCacheKey)
-  if (!structuredOutput) {
-    const prompt = `You are a structured data extractor. Analyze the product label and return a JSON object with the following fields:
+	// 2. VLM OCR
+	const ocrCacheKey = `extraction:${orgId}:${imageHash}:ocr`;
+	let ocrOutput = await getCachedResult(ocrCacheKey);
+	if (!ocrOutput) {
+		const prompt = `Read all text visible on the main product being held or centered in the foreground of this image.
+Strictly IGNORE any text on other products visible in the background or on surrounding shelves.
+IMPORTANT: There is a digital watermark/overlay text at the bottom or left edge of the image
+(typically starting with 'GH...' or 'maverick research'). Extract this watermark text separately
+on its own line, prefixed with 'WATERMARK:'. Output all other product label text normally.`;
+		await reporter.addLog(
+			"ocr",
+			`[${fileName}] Calling Workers AI for OCR...`,
+			"info",
+		);
+		ocrOutput = await runVisionModel(imageBuffer, prompt);
+		if (ocrOutput) {
+			await saveCachedResult(ocrCacheKey, ocrOutput);
+			await reporter.addLog(
+				"ocr",
+				`[${fileName}] OCR text extracted`,
+				"success",
+			);
+		}
+	} else {
+		await reporter.addLog(
+			"ocr",
+			`[${fileName}] OCR result loaded from KV Cache`,
+			"info",
+		);
+	}
+
+	// 3. VLM Structured Data
+	const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured`;
+	let structuredOutput = await getCachedResult(structuredCacheKey);
+	if (!structuredOutput) {
+		const prompt = `You are a structured data extractor. Analyze the product label and return a JSON object with the following fields:
 - ITEM_NAME: Exact product name
 - BARCODE: Barcode number (digits only)
 - MANUFACTURER: Manufacturer name
@@ -258,371 +310,552 @@ async function processSingleImage(
 - PROMOTION: Slogans or text about offers/sales (e.g. "2 for R25", "Buy 1 Get 1 Free")
 - ADDONS: Free items or additives (e.g. "with free spoon")
 - TAGLINE: Slogan or marketing phrase
-- PRODUCT_GROUP_KEY: Look at the bottom labels or tags. There is often a white name tag printed at the bottom of the image specifying the product name or ID. Extract that exact name tag (or if not present, suggest a short canonical brand-item name to group multiple angles of this same product together).
+- WATERMARK_RAW: The exact text of the digital watermark/overlay at the bottom or left edge of the image. This is metadata from the field auditor's app, NOT part of the product label. It typically follows the pattern: '{AuditID} {PRODUCT_NAME} {WEIGHT} {PACKAGING} {MANUFACTURER} {COUNTRY} · {Side}'. Extract it verbatim.
+- PRODUCT_GROUP_KEY: Using the WATERMARK_RAW text, extract the product description portion (everything after the GH/audit ID and before the side indicator like 'Front'/'Back'). This groups multiple angles of this same product.
+
+CRITICAL: Focus ONLY on the single main product being held or centered. Ignore all products visible on shelves in the background.
 
 Return ONLY valid JSON. Do not include markdown wraps or code block formatting. Format:
 {
   "ITEM_NAME": "...",
   "BARCODE": "...",
   ...
-}`
-    await reporter.addLog('vision', `[${fileName}] Calling Qwen2.5-VL for structured JSON...`, 'info')
-    structuredOutput = await runVisionModel(imageBuffer, prompt)
-    if (structuredOutput) {
-      await saveCachedResult(structuredCacheKey, structuredOutput)
-      await reporter.addLog('vision', `[${fileName}] Structured data extracted`, 'success')
-    }
-  } else {
-    await reporter.addLog('vision', `[${fileName}] Structured data loaded from KV Cache`, 'info')
-  }
+}`;
+		await reporter.addLog(
+			"structured",
+			`[${fileName}] Calling Qwen2.5-VL for structured JSON...`,
+			"info",
+		);
+		structuredOutput = await runVisionModel(imageBuffer, prompt);
+		if (structuredOutput) {
+			await saveCachedResult(structuredCacheKey, structuredOutput);
+			await reporter.addLog(
+				"structured",
+				`[${fileName}] Structured data extracted`,
+				"success",
+			);
+		}
+	} else {
+		await reporter.addLog(
+			"structured",
+			`[${fileName}] Structured data loaded from KV Cache`,
+			"info",
+		);
+	}
 
-  // Parse structured JSON output
-  let visionData: Partial<Record<ImdbColumnName, string>> = {}
-  let productGroupKey = ''
-  try {
-    const cleanJson = structuredOutput.trim().replace(/^```json/, '').replace(/```$/, '').trim()
-    const parsed = JSON.parse(cleanJson)
-    
-    productGroupKey = parsed.PRODUCT_GROUP_KEY || ''
-    
-    for (const col of IMDB_COLUMNS) {
-      if (parsed[col] !== undefined) {
-        visionData[col] = String(parsed[col])
-      }
-    }
-  } catch (err) {
-    console.error(`[Pipeline] Failed to parse structured JSON for ${fileName}:`, err)
-  }
+	// Parse structured JSON output
+	let visionData: Partial<Record<ImdbColumnName, string>> = {};
+	let productGroupKey = "";
+	let watermarkInfo: any = null;
+	try {
+		const cleanJson = structuredOutput
+			.trim()
+			.replace(/^```json/, "")
+			.replace(/```$/, "")
+			.trim();
+		const parsed = JSON.parse(cleanJson);
 
-  // If no group key found, fallback to Brand + Item name or filename
-  if (!productGroupKey) {
-    const brand = visionData.BRAND || ''
-    const item = visionData.ITEM_NAME || ''
-    productGroupKey = brand || item ? `${brand} ${item}`.trim() : fileName.split('.')[0]
-  }
+		productGroupKey = parsed.PRODUCT_GROUP_KEY || "";
 
-  return {
-    fileName,
-    zxing: barcodeResult ? { barcode: barcodeResult } : null,
-    ocr: ocrOutput,
-    vision: visionData,
-    productGroupKey
-  }
+		for (const col of IMDB_COLUMNS) {
+			if (parsed[col] !== undefined) {
+				visionData[col] = String(parsed[col]);
+			}
+		}
+
+		if (parsed.WATERMARK_RAW) {
+			watermarkInfo = parseWatermark(parsed.WATERMARK_RAW);
+			if (watermarkInfo) {
+				if (watermarkInfo.productDescription) {
+					productGroupKey = watermarkInfo.productDescription;
+				}
+				await reporter.addLog(
+					"structured",
+					`[${fileName}] Detected Retail Audit Watermark: ${parsed.WATERMARK_RAW}`,
+					"success",
+				);
+				await reporter.addLog(
+					"structured",
+					`[${fileName}] Parsed Audit ID: ${watermarkInfo.auditId} | Product: ${watermarkInfo.productDescription} | Side: ${watermarkInfo.side}`,
+					"info",
+				);
+			}
+		}
+	} catch (err) {
+		console.error(
+			`[Pipeline] Failed to parse structured JSON for ${fileName}:`,
+			err,
+		);
+	}
+
+	// If no group key found, fallback to Brand + Item name or filename
+	if (!productGroupKey) {
+		const brand = visionData.BRAND || "";
+		const item = visionData.ITEM_NAME || "";
+		productGroupKey =
+			brand || item ? `${brand} ${item}`.trim() : fileName.split(".")[0];
+	}
+
+	return {
+		fileName,
+		zxing: barcodeResult ? { barcode: barcodeResult } : null,
+		ocr: ocrOutput,
+		vision: visionData,
+		productGroupKey,
+		watermarkInfo,
+	};
 }
 
 /**
  * Main job processing engine.
  */
 export async function processJob(
-  jobId: string,
-  orgId: string,
-  imageKeys: string[],
-  env: any = null
+	jobId: string,
+	orgId: string,
+	imageKeys: string[],
+	env: any = null,
 ): Promise<void> {
-  const reporter = new JobReporter(env, jobId)
-  
-  console.log(`[Pipeline] Starting Job ${jobId} for Organisation ${orgId}`)
-  
-  await reporter.updateNodeState('job-start', 'active')
-  await reporter.addLog('job-start', `Received Job ${jobId} with ${imageKeys.length} images`, 'info')
-  
-  try {
-    await reporter.updateNodeState('job-start', 'completed')
-    await reporter.updateEdgeState('e-start-upload', true, '#10b981')
-    // 1. Update job to PROCESSING
-    await db.update(jobs)
-      .set({ status: 'PROCESSING', progress: 10, startedAt: new Date().toISOString() })
-      .where(eq(jobs.id, jobId))
+	const reporter = new JobReporter(env, jobId);
 
-    // 2. Load and process images in parallel
-    await reporter.updateNodeState('r2-upload', 'active')
-    await reporter.addLog('r2-upload', `Fetching ${imageKeys.length} images from storage`, 'info')
-    
-    const extractions: (RawExtractionPerImage & { productGroupKey: string })[] = []
-    
-    for (let i = 0; i < imageKeys.length; i++) {
-      const key = imageKeys[i]
-      const fileName = key.split('/').pop() || `image_${i}`
-      
-      const buffer = await getUpload(orgId, jobId, fileName)
-      if (!buffer) {
-        console.warn(`[Pipeline] Could not load image file: ${fileName}`)
-        await reporter.addLog('r2-upload', `Could not load image: ${fileName}`, 'error')
-        continue
-      }
-      await reporter.addLog('r2-upload', `Loaded ${fileName} successfully`, 'success')
+	console.log(`[Pipeline] Starting Job ${jobId} for Organisation ${orgId}`);
 
-      console.log(`[Pipeline] Processing image ${i + 1}/${imageKeys.length}: ${fileName}`)
-      
-      // We activate preprocess, zxing, ocr, and vision nodes now
-      if (i === 0) {
-        await reporter.updateNodeState('r2-upload', 'completed')
-        await reporter.updateEdgeState('e-upload-preprocess', true, '#10b981')
-        await reporter.updateNodeState('preprocess', 'active')
-        await reporter.updateNodeState('preprocess', 'completed') // Mocked bypass for now
-        
-        await reporter.updateEdgeState('e-preprocess-zxing', true, '#10b981')
-        await reporter.updateEdgeState('e-preprocess-ocr', true, '#10b981')
-        await reporter.updateEdgeState('e-preprocess-vision', true, '#10b981')
-        
-        await reporter.updateNodeState('zxing', 'active')
-        await reporter.updateNodeState('ocr', 'active')
-        await reporter.updateNodeState('vision', 'active')
-      }
-      
-      const ext = await processSingleImage(orgId, jobId, fileName, buffer, reporter)
-      extractions.push(ext)
+	await reporter.updateNodeState("upload", "active");
+	await reporter.addLog(
+		"upload",
+		`Received Job ${jobId} with ${imageKeys.length} images`,
+		"info",
+	);
 
-      // Update progress incrementally
-      const progressPercent = Math.min(80, 10 + Math.round((i + 1) / imageKeys.length * 70))
-      await db.update(jobs)
-        .set({ progress: progressPercent })
-        .where(eq(jobs.id, jobId))
-    }
+	try {
+		// 1. Update job to PROCESSING
+		await db
+			.update(jobs)
+			.set({
+				status: "PROCESSING",
+				progress: 10,
+				startedAt: new Date().toISOString(),
+			})
+			.where(eq(jobs.id, jobId));
 
-    // Extraction phase complete
-    await reporter.updateNodeState('zxing', 'completed')
-    await reporter.updateNodeState('ocr', 'completed')
-    await reporter.updateNodeState('vision', 'completed')
-    
-    await reporter.updateEdgeState('e-zxing-aggregate', true, '#10b981')
-    await reporter.updateEdgeState('e-ocr-aggregate', true, '#10b981')
-    await reporter.updateEdgeState('e-vision-aggregate', true, '#10b981')
-    
-    await reporter.updateNodeState('aggregate', 'active')
+		// 2. Load and process images
+		await reporter.addLog(
+			"upload",
+			`Fetching ${imageKeys.length} images from storage`,
+			"info",
+		);
 
-    // 3. Group by normalized Product Group Key (with weight-blocker)
-    const groups = groupExtractions(extractions)
-    await reporter.addLog('aggregate', `Grouped ${extractions.length} images into ${Object.keys(groups).length} distinct products`, 'info')
+		const extractions: (RawExtractionPerImage & {
+			productGroupKey: string;
+			watermarkInfo?: any;
+		})[] = [];
 
-    console.log(`[Pipeline] Grouped ${extractions.length} images into ${Object.keys(groups).length} products`)
+		for (let i = 0; i < imageKeys.length; i++) {
+			const key = imageKeys[i];
+			const fileName = key.split("/").pop() || `image_${i}`;
 
-    // 4. Multi-Image Aggregation per group
-    for (const [groupKey, groupExts] of Object.entries(groups)) {
-      const aggregatedRecord = {} as ImdbRecord
-      const fieldMetadata: Record<ImdbColumnName, FieldMeta> = {} as any
-      
-      // We will also compile rawEvidence for audit trail
-      const rawEvidence: RawExtraction = {
-        images: groupExts.map(e => ({
-          fileName: e.fileName,
-          zxing: e.zxing,
-          ocr: e.ocr,
-          vision: e.vision
-        }))
-      }
+			const buffer = await getUpload(orgId, jobId, fileName);
+			if (!buffer) {
+				console.warn(`[Pipeline] Could not load image file: ${fileName}`);
+				await reporter.addLog(
+					"upload",
+					`Could not load image: ${fileName}`,
+					"error",
+				);
+				continue;
+			}
+			await reporter.addLog(
+				"upload",
+				`Loaded ${fileName} successfully`,
+				"success",
+			);
 
-      // Loop through all 13 columns to merge
-      for (const col of IMDB_COLUMNS) {
-        // Collect candidate values with source & confidence
-        const candidates: { value: string; source: 'ZXing' | 'OCR' | 'Vision'; confidence: number }[] = []
+			console.log(
+				`[Pipeline] Processing image ${i + 1}/${imageKeys.length}: ${fileName}`,
+			);
 
-        for (const ext of groupExts) {
-          // Barcode can come from ZXing
-          if (col === 'BARCODE' && ext.zxing?.barcode) {
-            candidates.push({ value: ext.zxing.barcode, source: 'ZXing', confidence: 1.0 })
-          }
+			if (i === 0) {
+				await reporter.updateNodeState("upload", "completed");
 
-          // Structured VLM values
-          if (ext.vision?.[col]) {
-            candidates.push({ value: ext.vision[col]!, source: 'Vision', confidence: 0.8 })
-          }
+				await reporter.updateEdgeState("e1", true, "#10b981");
+				await reporter.updateEdgeState("e2", true, "#10b981");
+				await reporter.updateEdgeState("e3", true, "#10b981");
 
-          // OCR parsing (regex fallback)
-          if (ext.ocr) {
-            // Simple regex match for "COLUMN: Value" format in VLM OCR text
-            const regex = new RegExp(`${col}:\\s*([^\\n]+)`, 'i')
-            const match = ext.ocr.match(regex)
-            if (match && match[1]) {
-              candidates.push({ value: match[1].trim(), source: 'OCR', confidence: 0.6 })
-            }
-          }
-        }
+				await reporter.updateNodeState("zxing", "active");
+				await reporter.updateNodeState("ocr", "active");
+				await reporter.updateNodeState("structured", "active");
+			}
 
-        // Aggregate candidates
-        if (candidates.length === 0) {
-          aggregatedRecord[col] = ''
-          fieldMetadata[col] = { value: '', source: 'Merged', confidence: 0.0 }
-          continue
-        }
+			const ext = await processSingleImage(
+				orgId,
+				jobId,
+				fileName,
+				buffer,
+				reporter,
+			);
+			extractions.push(ext);
 
-        // Group identical values to boost confidence
-        const valueGroups: Record<string, typeof candidates> = {}
-        for (const cand of candidates) {
-          const normVal = normalizeField(col, cand.value)
-          if (!valueGroups[normVal]) {
-            valueGroups[normVal] = []
-          }
-          valueGroups[normVal].push(cand)
-        }
+			// Update progress incrementally
+			const progressPercent = Math.min(
+				80,
+				10 + Math.round(((i + 1) / imageKeys.length) * 70),
+			);
+			await db
+				.update(jobs)
+				.set({ progress: progressPercent })
+				.where(eq(jobs.id, jobId));
+		}
 
-        // Find the best value group
-        let bestNormValue = ''
-        let bestConfidence = 0.0
-        let bestSource: 'ZXing' | 'OCR' | 'Vision' | 'Merged' = 'Merged'
+		// Extraction phase complete
+		await reporter.updateNodeState("zxing", "completed");
+		await reporter.updateNodeState("ocr", "completed");
+		await reporter.updateNodeState("structured", "completed");
 
-        for (const [normVal, group] of Object.entries(valueGroups)) {
-          // Base confidence is the max base confidence in the group
-          const maxBaseConf = Math.max(...group.map(c => c.confidence))
-          // Boost confidence by 0.1 for every additional matching value from other sources/images
-          const matches = group.length
-          const finalConf = Math.min(1.0, maxBaseConf + 0.1 * (matches - 1))
+		await reporter.updateEdgeState("e4", true, "#10b981");
+		await reporter.updateEdgeState("e5", true, "#10b981");
+		await reporter.updateEdgeState("e6", true, "#10b981");
 
-          if (finalConf > bestConfidence) {
-            bestConfidence = finalConf
-            bestNormValue = normVal
-            bestSource = group.length > 1 ? 'Merged' : group[0].source
-          }
-        }
+		await reporter.updateNodeState("grouping", "active");
 
-        // Apply Empty Value Policy: empty string if confidence below threshold (never hallucinate)
-        if (bestConfidence < FIELD_EMPTY_THRESHOLD) {
-          aggregatedRecord[col] = ''
-          fieldMetadata[col] = { value: '', source: bestSource, confidence: bestConfidence }
-        } else {
-          aggregatedRecord[col] = bestNormValue
-          fieldMetadata[col] = { value: bestNormValue, source: bestSource, confidence: bestConfidence }
-        }
-      }
+		// 3. Group by normalized Product Group Key (with weight-blocker and filename sequential check)
+		const groups = groupExtractions(extractions);
+		await reporter.addLog(
+			"grouping",
+			`Grouped ${extractions.length} images into ${Object.keys(groups).length} distinct products`,
+			"info",
+		);
 
-      // 5. Final Normalization Layer
-      const finalRecord = normalizeRecord(aggregatedRecord)
+		console.log(
+			`[Pipeline] Grouped ${extractions.length} images into ${Object.keys(groups).length} products`,
+		);
 
-      // 6. Compute Overall Weighted Confidence
-      let weightedSum = 0
-      let weightTotal = 0
-      for (const col of IMDB_COLUMNS) {
-        const weight = FIELD_WEIGHTS[col]
-        const conf = fieldMetadata[col].confidence
-        weightedSum += conf * weight
-        weightTotal += weight
-      }
-      const overallConfidence = weightTotal > 0 ? (weightedSum / weightTotal) : 0
-      const flagged = overallConfidence < CONFIDENCE_THRESHOLD
+		await reporter.updateNodeState("grouping", "completed");
+		await reporter.updateEdgeState("e7", true, "#10b981");
 
-      // Get canonical product group tag name (pick the most common or first raw group key)
-      const groupTag = groupExts[0].productGroupKey
+		await reporter.updateNodeState("aggregation", "active");
 
-      // 7. Write IMDB Record to DB
-      const recordId = crypto.randomUUID()
-      await db.insert(imdbRecords).values({
-        id: recordId,
-        jobId,
-        organisationId: orgId,
-        ITEM_NAME: finalRecord.ITEM_NAME,
-        BARCODE: finalRecord.BARCODE,
-        MANUFACTURER: finalRecord.MANUFACTURER,
-        BRAND: finalRecord.BRAND,
-        WEIGHT: finalRecord.WEIGHT,
-        PACKAGING_TYPE: finalRecord.PACKAGING_TYPE,
-        COUNTRY: finalRecord.COUNTRY,
-        VARIANT: finalRecord.VARIANT,
-        TYPE: finalRecord.TYPE,
-        FRAGRANCE_FLAVOR: finalRecord.FRAGRANCE_FLAVOR,
-        PROMOTION: finalRecord.PROMOTION,
-        ADDONS: finalRecord.ADDONS,
-        TAGLINE: finalRecord.TAGLINE,
-        confidence: overallConfidence,
-        flagged,
-        rawExtraction: rawEvidence,
-        fieldMetadata,
-        productGroupKey: groupTag
-      })
-      await reporter.addLog('aggregate', `Generated final record for group: ${groupTag}`, 'success')
-    }
-    
-    await reporter.updateNodeState('aggregate', 'completed')
-    await reporter.updateEdgeState('e-aggregate-db', true, '#10b981')
-    await reporter.updateNodeState('db-write', 'active')
+		// 4. Multi-Image Aggregation per group
+		for (const [groupKey, groupExts] of Object.entries(groups)) {
+			const aggregatedRecord = {} as ImdbRecord;
+			const fieldMetadata: Record<ImdbColumnName, FieldMeta> = {} as any;
 
-    // 8. Post-Job Duplicate Detection
-    // Collect IDs of records just written by this job
-    const newRecords = await db.select()
-      .from(imdbRecords)
-      .where(and(eq(imdbRecords.jobId, jobId), eq(imdbRecords.organisationId, orgId)))
+			// We will also compile rawEvidence for audit trail
+			const rawEvidence: RawExtraction = {
+				images: groupExts.map((e) => ({
+					fileName: e.fileName,
+					zxing: e.zxing,
+					ocr: e.ocr,
+					vision: e.vision,
+				})),
+			};
 
-    // Query all existing ACTIVE records for this org, excluding records from the current job
-    const existingRecords = await db.select()
-      .from(imdbRecords)
-      .where(
-        and(
-          eq(imdbRecords.organisationId, orgId),
-          eq(imdbRecords.status, 'ACTIVE'),
-          ne(imdbRecords.jobId, jobId),
-        ),
-      )
+			// Loop through all 13 columns to merge
+			for (const col of IMDB_COLUMNS) {
+				// Collect candidate values with source & confidence
+				const candidates: {
+					value: string;
+					source: ExtractionSource;
+					confidence: number;
+				}[] = [];
 
-    const dupInserts: (typeof duplicatePairs.$inferInsert)[] = []
+				for (const ext of groupExts) {
+					// Barcode can come from ZXing
+					if (col === "BARCODE" && ext.zxing?.barcode) {
+						candidates.push({
+							value: ext.zxing.barcode,
+							source: "ZXing",
+							confidence: 1.0,
+						});
+					}
 
-    for (const newRec of newRecords) {
-      for (const existing of existingRecords) {
-        // BARCODE_MATCH: both have non-empty barcodes and they match exactly
-        const newBarcode = normalizeField('BARCODE', newRec.BARCODE)
-        const existingBarcode = normalizeField('BARCODE', existing.BARCODE)
+					// Watermark parsed values (0.9 confidence)
+					if (ext.watermarkInfo) {
+						let val: string | null = null;
+						if (col === "ITEM_NAME" && ext.watermarkInfo.productDescription)
+							val = ext.watermarkInfo.productDescription;
+						if (col === "WEIGHT" && ext.watermarkInfo.weight)
+							val = ext.watermarkInfo.weight;
+						if (col === "PACKAGING_TYPE" && ext.watermarkInfo.packaging)
+							val = ext.watermarkInfo.packaging;
+						if (col === "MANUFACTURER" && ext.watermarkInfo.manufacturer)
+							val = ext.watermarkInfo.manufacturer;
+						if (col === "COUNTRY" && ext.watermarkInfo.country)
+							val = ext.watermarkInfo.country;
 
-        if (newBarcode && existingBarcode && newBarcode === existingBarcode) {
-          dupInserts.push({
-            id: crypto.randomUUID(),
-            orgId,
-            recordAId: newRec.id,
-            recordBId: existing.id,
-            similarityScore: 1.0,
-            reason: 'BARCODE_MATCH',
-            status: 'PENDING',
-          })
-          continue // barcode match is strongest — skip weaker checks for this pair
-        }
+						if (val) {
+							candidates.push({
+								value: val,
+								source: "Watermark",
+								confidence: 0.9,
+							});
+						}
+					}
 
-        // BRAND_WEIGHT_MATCH: same normalized BRAND and same normalized WEIGHT
-        const newBrand = normalizeField('BRAND', newRec.BRAND)
-        const existingBrand = normalizeField('BRAND', existing.BRAND)
-        const newWeight = normalizeField('WEIGHT', newRec.WEIGHT)
-        const existingWeight = normalizeField('WEIGHT', existing.WEIGHT)
+					// Structured VLM values
+					if (ext.vision?.[col]) {
+						candidates.push({
+							value: ext.vision[col]!,
+							source: "Vision",
+							confidence: 0.8,
+						});
+					}
 
-        if (
-          newBrand && existingBrand && newBrand.toLowerCase() === existingBrand.toLowerCase() &&
-          newWeight && existingWeight && newWeight === existingWeight
-        ) {
-          dupInserts.push({
-            id: crypto.randomUUID(),
-            orgId,
-            recordAId: newRec.id,
-            recordBId: existing.id,
-            similarityScore: 0.85,
-            reason: 'BRAND_WEIGHT_MATCH',
-            status: 'PENDING',
-          })
-        }
-      }
-    }
+					// OCR parsing (regex fallback)
+					if (ext.ocr) {
+						// Simple regex match for "COLUMN: Value" format in VLM OCR text
+						const regex = new RegExp(`${col}:\\s*([^\\n]+)`, "i");
+						const match = ext.ocr.match(regex);
+						if (match && match[1]) {
+							candidates.push({
+								value: match[1].trim(),
+								source: "OCR",
+								confidence: 0.6,
+							});
+						}
+					}
+				}
 
-    // Batch-insert duplicate pairs
-    if (dupInserts.length > 0) {
-      console.log(`[Pipeline] Found ${dupInserts.length} potential duplicate pair(s) for job ${jobId}`)
-      for (const dup of dupInserts) {
-        await db.insert(duplicatePairs).values(dup)
-      }
-    }
+				// Aggregate candidates
+				if (candidates.length === 0) {
+					aggregatedRecord[col] = "";
+					fieldMetadata[col] = { value: "", source: "Merged", confidence: 0.0 };
+					continue;
+				}
 
-    // 9. Mark Job as COMPLETED
-    await db.update(jobs)
-      .set({ status: 'COMPLETED', progress: 100, completedAt: new Date().toISOString() })
-      .where(eq(jobs.id, jobId))
-      
-    await reporter.addLog('db-write', `Committed ${newRecords.length} records and ${dupInserts.length} duplicate pairs to D1`, 'success')
-    await reporter.updateNodeState('db-write', 'completed')
+				// Group identical values to boost confidence
+				const valueGroups: Record<string, typeof candidates> = {};
+				for (const cand of candidates) {
+					const normVal = normalizeField(col, cand.value);
+					if (!valueGroups[normVal]) {
+						valueGroups[normVal] = [];
+					}
+					valueGroups[normVal].push(cand);
+				}
 
-    console.log(`[Pipeline] Job ${jobId} finished successfully!`)
+				// Find the best value group
+				let bestNormValue = "";
+				let bestConfidence = 0.0;
+				let bestSource: ExtractionSource = "Merged";
 
-  } catch (err: any) {
-    console.error(`[Pipeline] Job ${jobId} failed:`, err)
-    
-    // Mark Job as FAILED
-    await db.update(jobs)
-      .set({ status: 'FAILED', progress: 100, error: err?.message || String(err), completedAt: new Date().toISOString() })
-      .where(eq(jobs.id, jobId))
-      
-    await reporter.addLog('job-start', `Job Failed: ${err?.message}`, 'error')
-    await reporter.updateNodeState('db-write', 'error')
-  }
+				for (const [normVal, group] of Object.entries(valueGroups)) {
+					// Base confidence is the max base confidence in the group
+					const maxBaseConf = Math.max(...group.map((c) => c.confidence));
+					// Boost confidence by 0.1 for every additional matching value from other sources/images
+					const matches = group.length;
+					const finalConf = Math.min(1.0, maxBaseConf + 0.1 * (matches - 1));
+
+					if (finalConf > bestConfidence) {
+						bestConfidence = finalConf;
+						bestNormValue = normVal;
+						bestSource = group.length > 1 ? "Merged" : group[0].source;
+					}
+				}
+
+				// Apply Empty Value Policy: empty string if confidence below threshold (never hallucinate)
+				if (bestConfidence < FIELD_EMPTY_THRESHOLD) {
+					aggregatedRecord[col] = "";
+					fieldMetadata[col] = {
+						value: "",
+						source: bestSource,
+						confidence: bestConfidence,
+					};
+				} else {
+					aggregatedRecord[col] = bestNormValue;
+					fieldMetadata[col] = {
+						value: bestNormValue,
+						source: bestSource,
+						confidence: bestConfidence,
+					};
+				}
+			}
+
+			await reporter.addLog(
+				"aggregation",
+				`Aggregated fields for product: ${groupKey}`,
+				"success",
+			);
+
+			// 5. Final Normalization Layer
+			await reporter.updateNodeState("aggregation", "completed");
+			await reporter.updateEdgeState("e8", true, "#10b981");
+			await reporter.updateNodeState("normalization", "active");
+
+			const finalRecord = normalizeRecord(aggregatedRecord);
+			await reporter.addLog(
+				"normalization",
+				`Normalized record for ${finalRecord.ITEM_NAME || groupKey}`,
+				"success",
+			);
+
+			// 6. Compute Overall Weighted Confidence
+			let weightedSum = 0;
+			let weightTotal = 0;
+			for (const col of IMDB_COLUMNS) {
+				const weight = FIELD_WEIGHTS[col];
+				const conf = fieldMetadata[col].confidence;
+				weightedSum += conf * weight;
+				weightTotal += weight;
+			}
+			const overallConfidence = weightTotal > 0 ? weightedSum / weightTotal : 0;
+			const flagged = overallConfidence < CONFIDENCE_THRESHOLD;
+
+			await reporter.updateNodeState("normalization", "completed");
+			await reporter.updateEdgeState("e9", true, "#10b981");
+			await reporter.updateNodeState("database", "active");
+
+			// Get canonical product group tag name (pick the most common or first raw group key)
+			const groupTag = groupExts[0].productGroupKey;
+
+			// 7. Write IMDB Record to DB
+			const recordId = crypto.randomUUID();
+			await db.insert(imdbRecords).values({
+				id: recordId,
+				jobId,
+				organisationId: orgId,
+				ITEM_NAME: finalRecord.ITEM_NAME,
+				BARCODE: finalRecord.BARCODE,
+				MANUFACTURER: finalRecord.MANUFACTURER,
+				BRAND: finalRecord.BRAND,
+				WEIGHT: finalRecord.WEIGHT,
+				PACKAGING_TYPE: finalRecord.PACKAGING_TYPE,
+				COUNTRY: finalRecord.COUNTRY,
+				VARIANT: finalRecord.VARIANT,
+				TYPE: finalRecord.TYPE,
+				FRAGRANCE_FLAVOR: finalRecord.FRAGRANCE_FLAVOR,
+				PROMOTION: finalRecord.PROMOTION,
+				ADDONS: finalRecord.ADDONS,
+				TAGLINE: finalRecord.TAGLINE,
+				confidence: overallConfidence,
+				flagged,
+				rawExtraction: rawEvidence,
+				fieldMetadata,
+				productGroupKey: groupTag,
+			});
+			await reporter.addLog(
+				"database",
+				`Generated & saved final record: ${finalRecord.ITEM_NAME || groupTag}`,
+				"success",
+			);
+		}
+
+		await reporter.updateNodeState("database", "completed");
+		await reporter.updateEdgeState("e10", true, "#10b981");
+		await reporter.updateNodeState("deduplication", "active");
+
+		// 8. Post-Job Duplicate Detection
+		// Collect IDs of records just written by this job
+		const newRecords = await db
+			.select()
+			.from(imdbRecords)
+			.where(
+				and(
+					eq(imdbRecords.jobId, jobId),
+					eq(imdbRecords.organisationId, orgId),
+				),
+			);
+
+		// Query all existing ACTIVE records for this org, excluding records from the current job
+		const existingRecords = await db
+			.select()
+			.from(imdbRecords)
+			.where(
+				and(
+					eq(imdbRecords.organisationId, orgId),
+					eq(imdbRecords.status, "ACTIVE"),
+					ne(imdbRecords.jobId, jobId),
+				),
+			);
+
+		const dupInserts: (typeof duplicatePairs.$inferInsert)[] = [];
+
+		for (const newRec of newRecords) {
+			for (const existing of existingRecords) {
+				// BARCODE_MATCH: both have non-empty barcodes and they match exactly
+				const newBarcode = normalizeField("BARCODE", newRec.BARCODE);
+				const existingBarcode = normalizeField("BARCODE", existing.BARCODE);
+
+				if (newBarcode && existingBarcode && newBarcode === existingBarcode) {
+					dupInserts.push({
+						id: crypto.randomUUID(),
+						orgId,
+						recordAId: newRec.id,
+						recordBId: existing.id,
+						similarityScore: 1.0,
+						reason: "BARCODE_MATCH",
+						status: "PENDING",
+					});
+					continue; // barcode match is strongest — skip weaker checks for this pair
+				}
+
+				// BRAND_WEIGHT_MATCH: same normalized BRAND and same normalized WEIGHT
+				const newBrand = normalizeField("BRAND", newRec.BRAND);
+				const existingBrand = normalizeField("BRAND", existing.BRAND);
+				const newWeight = normalizeField("WEIGHT", newRec.WEIGHT);
+				const existingWeight = normalizeField("WEIGHT", existing.WEIGHT);
+
+				if (
+					newBrand &&
+					existingBrand &&
+					newBrand.toLowerCase() === existingBrand.toLowerCase() &&
+					newWeight &&
+					existingWeight &&
+					newWeight === existingWeight
+				) {
+					dupInserts.push({
+						id: crypto.randomUUID(),
+						orgId,
+						recordAId: newRec.id,
+						recordBId: existing.id,
+						similarityScore: 0.85,
+						reason: "BRAND_WEIGHT_MATCH",
+						status: "PENDING",
+					});
+				}
+			}
+		}
+
+		// Batch-insert duplicate pairs
+		if (dupInserts.length > 0) {
+			console.log(
+				`[Pipeline] Found ${dupInserts.length} potential duplicate pair(s) for job ${jobId}`,
+			);
+			for (const dup of dupInserts) {
+				await db.insert(duplicatePairs).values(dup);
+			}
+		}
+
+		// 9. Mark Job as COMPLETED
+		await db
+			.update(jobs)
+			.set({
+				status: "COMPLETED",
+				progress: 100,
+				completedAt: new Date().toISOString(),
+			})
+			.where(eq(jobs.id, jobId));
+
+		await reporter.addLog(
+			"deduplication",
+			`Committed ${newRecords.length} records and ${dupInserts.length} duplicate pairs`,
+			"success",
+		);
+		await reporter.updateNodeState("deduplication", "completed");
+
+		console.log(`[Pipeline] Job ${jobId} finished successfully!`);
+	} catch (err: any) {
+		console.error(`[Pipeline] Job ${jobId} failed:`, err);
+
+		// Mark Job as FAILED
+		await db
+			.update(jobs)
+			.set({
+				status: "FAILED",
+				progress: 100,
+				error: err?.message || String(err),
+				completedAt: new Date().toISOString(),
+			})
+			.where(eq(jobs.id, jobId));
+
+		await reporter.addLog("upload", `Job Failed: ${err?.message}`, "error");
+		await reporter.updateNodeState("upload", "failed");
+	}
 }
