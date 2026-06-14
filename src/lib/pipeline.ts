@@ -110,7 +110,7 @@ async function saveCachedResult(key: string, value: string): Promise<void> {
 }
 
 /**
- * Runs the VLM model (Qwen2.5-VL-7b-instruct) on Cloudflare Workers AI or via REST API/Mock fallback.
+ * Runs the VLM model (Llama-3.2-11b-vision-instruct) on Cloudflare Workers AI or via REST API/Mock fallback.
  */
 async function runVisionModel(
 	imageBuffer: ArrayBuffer | Buffer,
@@ -126,7 +126,7 @@ async function runVisionModel(
 				prompt,
 			};
 			const result = await aiBinding.run(
-				"@cf/qwen/qwen2.5-vl-7b-instruct",
+				"@cf/meta/llama-3.2-11b-vision-instruct",
 				input,
 			);
 			return result?.response || "";
@@ -143,7 +143,7 @@ async function runVisionModel(
 		try {
 			console.log("[Pipeline] Calling Cloudflare AI REST API...");
 			const response = await fetch(
-				`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/qwen/qwen2.5-vl-7b-instruct`,
+				`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/meta/llama-3.2-11b-vision-instruct`,
 				{
 					method: "POST",
 					headers: {
@@ -323,7 +323,7 @@ Return ONLY valid JSON. Do not include markdown wraps or code block formatting. 
 }`;
 		await reporter.addLog(
 			"structured",
-			`[${fileName}] Calling Qwen2.5-VL for structured JSON...`,
+			`[${fileName}] Calling Llama-3.2-11b-Vision for structured JSON...`,
 			"info",
 		);
 		structuredOutput = await runVisionModel(imageBuffer, prompt);
