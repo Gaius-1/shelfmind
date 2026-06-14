@@ -645,8 +645,13 @@ export async function processJob(
 		await reporter.updateNodeState("normalization", "active");
 		await reporter.updateNodeState("database", "active");
 
+		let totalAggregationMs = 0;
+		let totalNormalizationMs = 0;
+		let totalDatabaseMs = 0;
+
 		// 4. Multi-Image Aggregation per group
 		for (const [groupKey, groupExts] of Object.entries(groups)) {
+			const aggStart = Date.now();
 			const aggregatedRecord = {} as ImdbRecord;
 			const fieldMetadata: Record<ImdbColumnName, FieldMeta> = {} as any;
 
