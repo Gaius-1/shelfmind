@@ -110,7 +110,20 @@ export default {
       (globalThis.process.env as any)[key] = env[key];
     }
     console.log(`Received ${batch.messages.length} messages in queue`);
-    // TODO: Implement image processing pipeline here
+    
+    const { processJob } = await import('#/lib/pipeline.ts');
+
+    for (const message of batch.messages) {
+      try {
+        const { jobId, orgId, imageKeys } = message.body;
+        console.log(`[Queue Consumer] Processing job ${jobId}`);
+        await processJob(jobId, orgId, imageKeys, env);
+        message.ack();
+      } catch (err) {
+        console.error(`[Queue Consumer] Failed processing job:`, err);
+        message.retry();
+      }
+    }
   }
 }
 
