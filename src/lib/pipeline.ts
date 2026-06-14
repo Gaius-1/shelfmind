@@ -111,14 +111,15 @@ async function getCachedResult(key: string): Promise<string | null> {
 
 async function saveCachedResult(key: string, value: string): Promise<void> {
 	const kv = getCacheKV();
+	const stringValue = typeof value === "string" ? value : JSON.stringify(value);
 	if (kv) {
-		await kv.put(key, value, { expirationTtl: 7 * 24 * 60 * 60 }); // 7 days
+		await kv.put(key, stringValue, { expirationTtl: 7 * 24 * 60 * 60 }); // 7 days
 		return;
 	}
 
 	// Local filesystem fallback
 	const filePath = join(CACHE_DIR, `${key.replace(/:/g, "_")}.json`);
-	await Bun.write(filePath, value);
+	await Bun.write(filePath, stringValue);
 }
 
 /**
@@ -162,7 +163,7 @@ async function runVisionModel(
 				"[Pipeline] AI response preview:",
 				String(text).substring(0, 200),
 			);
-			return text;
+			return typeof text === "string" ? text : JSON.stringify(text);
 		} catch (err) {
 			console.error("[Pipeline] Cloudflare AI binding failed:", err);
 			throw err;
@@ -204,11 +205,11 @@ async function runVisionModel(
 			}
 
 			const json = await response.json();
-			return (
+			const res =
 				(json as any).result?.response ||
 				(json as any).result?.choices?.[0]?.message?.content ||
-				""
-			);
+				"";
+			return typeof res === "string" ? res : JSON.stringify(res);
 		} catch (err) {
 			console.error("[Pipeline] Cloudflare AI REST API failed:", err);
 			throw err;
@@ -244,7 +245,8 @@ async function runVisionModel(
 		}
 	}
 
-	return prompt.includes("Read all text") ? "" : "{}";
+	console.warn("[Pipeline] runVisionModel fell through, returning empty string");
+	return "";
 }
 
 /**
