@@ -6,8 +6,10 @@ import * as schema from '#/db/schema.ts'
 const routeOptions: any = {
   server: {
     handlers: {
-      GET: async () => {
+      GET: async ({ request }: { request: Request }) => {
         const results: any = {}
+        const url = new URL(request.url)
+        const clear = url.searchParams.get('clear') === 'true'
         try {
           const dbBinding = getBinding('DB')
           results.hasDbBinding = !!dbBinding
@@ -62,6 +64,61 @@ const routeOptions: any = {
               name: authErr?.name,
               message: authErr?.message,
               stack: authErr?.stack,
+            }
+          }
+
+          if (clear) {
+            results.cleared = {} as any
+            
+            // 1. Clear PRODUCT_IMAGES R2 bucket
+            const imagesBucket = getBinding('PRODUCT_IMAGES') as any
+            if (imagesBucket) {
+              results.cleared.imagesBucket = []
+              let cursor: string | undefined
+              do {
+                const list: any = await imagesBucket.list({ cursor })
+                if (list?.objects) {
+                  for (const obj of list.objects) {
+                    await imagesBucket.delete(obj.key)
+                    results.cleared.imagesBucket.push(obj.key)
+                  }
+                }
+                cursor = list?.truncated ? list.cursor : undefined
+              } while (cursor)
+            }
+
+            // 2. Clear EXPORTS R2 bucket
+            const exportsBucket = getBinding('EXPORTS') as any
+            if (exportsBucket) {
+              results.cleared.exportsBucket = []
+              let cursor: string | undefined
+              do {
+                const list: any = await exportsBucket.list({ cursor })
+                if (list?.objects) {
+                  for (const obj of list.objects) {
+                    await exportsBucket.delete(obj.key)
+                    results.cleared.exportsBucket.push(obj.key)
+                  }
+                }
+                cursor = list?.truncated ? list.cursor : undefined
+              } while (cursor)
+            }
+
+            // 3. Clear CACHE KV namespace
+            const cacheKv = getBinding('CACHE') as any
+            if (cacheKv) {
+              results.cleared.cacheKv = []
+              let cursor: string | undefined
+              do {
+                const list: any = await cacheKv.list({ cursor })
+                if (list?.keys) {
+                  for (const key of list.keys) {
+                    await cacheKv.delete(key.name)
+                    results.cleared.cacheKv.push(key.name)
+                  }
+                }
+                cursor = list?.truncated ? list.cursor : undefined
+              } while (cursor)
             }
           }
 

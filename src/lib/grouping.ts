@@ -279,14 +279,14 @@ export function groupExtractions<T extends GroupableExtraction>(
 		// Find pair of groups with highest similarity score
 		for (let i = 0; i < activeGroups.length; i++) {
 			for (let j = i + 1; j < activeGroups.length; j++) {
-				// Apply group-wide side conflict blocker
-				if (hasConflictingSides(activeGroups[i], activeGroups[j])) {
-					continue;
-				}
-
 				const repA = getGroupRepresentative(activeGroups[i]);
 				const repB = getGroupRepresentative(activeGroups[j]);
 				const score = computeGroupSimilarity(repA, repB);
+
+				// Apply group-wide side conflict blocker, EXCEPT when there is a guaranteed barcode match (score === 1.0 from barcode)
+				if (score < 1.0 && hasConflictingSides(activeGroups[i], activeGroups[j])) {
+					continue;
+				}
 
 				if (score > bestScore) {
 					bestScore = score;
