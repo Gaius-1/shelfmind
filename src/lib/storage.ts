@@ -1,10 +1,11 @@
 import { join } from 'path'
 import { existsSync } from 'fs'
+import { getBinding } from './cloudflare.ts'
 
 const MOCK_DIR = join(process.cwd(), '.wrangler', 'mock-r2')
 
 function getR2Binding(bucketName: 'PRODUCT_IMAGES' | 'EXPORTS') {
-  return (process.env as any)[bucketName] || (globalThis as any)[bucketName]
+  return getBinding(bucketName)
 }
 
 /**

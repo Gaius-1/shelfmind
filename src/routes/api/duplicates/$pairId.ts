@@ -1,5 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { auth } from '#/lib/auth.ts'
 import { db } from '#/db/index.ts'
 import { imdbRecords, duplicatePairs } from '#/db/schema.ts'
 import * as schema from '#/db/schema.ts'
@@ -13,6 +12,7 @@ const routeOptions: any = {
       PATCH: async ({ request, params }: { request: Request; params: { pairId: string } }) => {
         try {
           // 1. Authenticate user
+          const { auth } = await import('#/lib/auth.ts')
           const session = await auth.api.getSession({ headers: request.headers })
           if (!session) {
             return new Response(JSON.stringify({ error: 'Unauthorized' }), {

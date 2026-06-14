@@ -19,6 +19,7 @@ import { Route as DashboardProcessingQueueRouteImport } from './routes/dashboard
 import { Route as DashboardExportsRouteImport } from './routes/dashboard/exports'
 import { Route as DashboardDuplicatesRouteImport } from './routes/dashboard/duplicates'
 import { Route as ApiStatsRouteImport } from './routes/api/stats'
+import { Route as ApiDebugDbRouteImport } from './routes/api/debug-db'
 import { Route as DashboardSettingsRouteImport } from './routes/_dashboard/settings'
 import { Route as DashboardSecurityRouteImport } from './routes/_dashboard/security'
 import { Route as DashboardOrganizationRouteImport } from './routes/_dashboard/organization'
@@ -87,6 +88,11 @@ const DashboardDuplicatesRoute = DashboardDuplicatesRouteImport.update({
 const ApiStatsRoute = ApiStatsRouteImport.update({
   id: '/api/stats',
   path: '/api/stats',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDebugDbRoute = ApiDebugDbRouteImport.update({
+  id: '/api/debug-db',
+  path: '/api/debug-db',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
@@ -189,6 +195,7 @@ export interface FileRoutesByFullPath {
   '/organization': typeof DashboardOrganizationRoute
   '/security': typeof DashboardSecurityRoute
   '/settings': typeof DashboardSettingsRoute
+  '/api/debug-db': typeof ApiDebugDbRoute
   '/api/stats': typeof ApiStatsRoute
   '/dashboard/duplicates': typeof DashboardDuplicatesRoute
   '/dashboard/exports': typeof DashboardExportsRoute
@@ -218,6 +225,7 @@ export interface FileRoutesByTo {
   '/organization': typeof DashboardOrganizationRoute
   '/security': typeof DashboardSecurityRoute
   '/settings': typeof DashboardSettingsRoute
+  '/api/debug-db': typeof ApiDebugDbRoute
   '/api/stats': typeof ApiStatsRoute
   '/dashboard/duplicates': typeof DashboardDuplicatesRoute
   '/dashboard/exports': typeof DashboardExportsRoute
@@ -249,6 +257,7 @@ export interface FileRoutesById {
   '/_dashboard/organization': typeof DashboardOrganizationRoute
   '/_dashboard/security': typeof DashboardSecurityRoute
   '/_dashboard/settings': typeof DashboardSettingsRoute
+  '/api/debug-db': typeof ApiDebugDbRoute
   '/api/stats': typeof ApiStatsRoute
   '/dashboard/duplicates': typeof DashboardDuplicatesRoute
   '/dashboard/exports': typeof DashboardExportsRoute
@@ -281,6 +290,7 @@ export interface FileRouteTypes {
     | '/organization'
     | '/security'
     | '/settings'
+    | '/api/debug-db'
     | '/api/stats'
     | '/dashboard/duplicates'
     | '/dashboard/exports'
@@ -310,6 +320,7 @@ export interface FileRouteTypes {
     | '/organization'
     | '/security'
     | '/settings'
+    | '/api/debug-db'
     | '/api/stats'
     | '/dashboard/duplicates'
     | '/dashboard/exports'
@@ -340,6 +351,7 @@ export interface FileRouteTypes {
     | '/_dashboard/organization'
     | '/_dashboard/security'
     | '/_dashboard/settings'
+    | '/api/debug-db'
     | '/api/stats'
     | '/dashboard/duplicates'
     | '/dashboard/exports'
@@ -371,6 +383,7 @@ export interface RootRouteChildren {
   DashboardOrganizationRoute: typeof DashboardOrganizationRoute
   DashboardSecurityRoute: typeof DashboardSecurityRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
+  ApiDebugDbRoute: typeof ApiDebugDbRoute
   ApiStatsRoute: typeof ApiStatsRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiDuplicatesPairIdRoute: typeof ApiDuplicatesPairIdRoute
@@ -452,6 +465,13 @@ declare module '@tanstack/react-router' {
       path: '/api/stats'
       fullPath: '/api/stats'
       preLoaderRoute: typeof ApiStatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/debug-db': {
+      id: '/api/debug-db'
+      path: '/api/debug-db'
+      fullPath: '/api/debug-db'
+      preLoaderRoute: typeof ApiDebugDbRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_dashboard/settings': {
@@ -644,6 +664,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardOrganizationRoute: DashboardOrganizationRoute,
   DashboardSecurityRoute: DashboardSecurityRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,
+  ApiDebugDbRoute: ApiDebugDbRoute,
   ApiStatsRoute: ApiStatsRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiDuplicatesPairIdRoute: ApiDuplicatesPairIdRoute,

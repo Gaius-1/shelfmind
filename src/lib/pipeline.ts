@@ -18,6 +18,7 @@ import {
 import { normalizeRecord, normalizeField } from './normalization.ts'
 import { getUpload } from './storage.ts'
 import { groupExtractions } from './grouping.ts'
+import { getBinding } from './cloudflare.ts'
 
 export class JobReporter {
   private stub: any = null;
@@ -72,7 +73,7 @@ async function hashBuffer(buffer: ArrayBuffer | Buffer): Promise<string> {
 
 // Check for KV Cache namespace binding
 function getCacheKV() {
-  return (process.env as any).CACHE || (globalThis as any).CACHE
+  return getBinding('CACHE')
 }
 
 // Caching helper
@@ -109,7 +110,7 @@ async function runVisionModel(
   imageBuffer: ArrayBuffer | Buffer,
   prompt: string
 ): Promise<string> {
-  const aiBinding = (process.env as any).AI || (globalThis as any).AI
+  const aiBinding = getBinding('AI')
 
   if (aiBinding) {
     try {
@@ -126,8 +127,8 @@ async function runVisionModel(
     }
   }
 
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
-  const apiToken = process.env.CLOUDFLARE_API_TOKEN
+  const accountId = getBinding('CLOUDFLARE_ACCOUNT_ID')
+  const apiToken = getBinding('CLOUDFLARE_API_TOKEN')
 
   if (accountId && apiToken) {
     try {

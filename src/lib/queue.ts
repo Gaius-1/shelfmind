@@ -1,5 +1,7 @@
+import { getBinding } from './cloudflare.ts'
+
 function getQueueBinding() {
-  return (process.env as any).IMAGE_QUEUE || (globalThis as any).IMAGE_QUEUE
+  return getBinding('IMAGE_QUEUE')
 }
 
 export interface QueueMessage {

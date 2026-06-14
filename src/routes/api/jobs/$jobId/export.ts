@@ -1,10 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { auth } from '#/lib/auth.ts'
 import { db } from '#/db/index.ts'
 import { jobs, imdbRecords } from '#/db/schema.ts'
 import * as schema from '#/db/schema.ts'
 import { eq, and } from 'drizzle-orm'
-import { generateExcelExport } from '#/lib/export.ts'
 
 const routeOptions: any = {
   server: {
@@ -12,6 +10,7 @@ const routeOptions: any = {
       POST: async ({ request, params }: { request: Request; params: { jobId: string } }) => {
         try {
           // 1. Authenticate user
+          const { auth } = await import('#/lib/auth.ts')
           const session = await auth.api.getSession({ headers: request.headers })
           if (!session) {
             return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -60,6 +59,7 @@ const routeOptions: any = {
             .where(and(eq(imdbRecords.jobId, jobId), eq(imdbRecords.organisationId, orgId)))
 
           // 5. Generate Excel Predictions Spreadsheet
+          const { generateExcelExport } = await import('#/lib/export.ts')
           const downloadUrl = await generateExcelExport(orgId, jobId, records, includeMetadata)
 
           return new Response(JSON.stringify({ success: true, downloadUrl }), {

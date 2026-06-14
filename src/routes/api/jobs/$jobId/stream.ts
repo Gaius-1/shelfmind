@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { getBinding } from '#/lib/cloudflare.ts'
 
 const routeOptions: any = {
   server: {
@@ -6,9 +7,7 @@ const routeOptions: any = {
       GET: async ({ request, params }: { request: Request, params: any }) => {
         const { jobId } = params
         
-        // In Tanstack Start + Cloudflare, bindings are typically on process.env or globalThis
-        const env = (process.env as any).JOB_COORDINATOR ? process.env : globalThis as any
-        const coordinatorBinding = env.JOB_COORDINATOR
+        const coordinatorBinding = getBinding('JOB_COORDINATOR')
 
         if (!coordinatorBinding) {
           console.error('[API] JOB_COORDINATOR binding not found')

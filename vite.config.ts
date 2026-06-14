@@ -9,7 +9,12 @@ import babel from '@rolldown/plugin-babel'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  resolve: { tsconfigPaths: true },
+  resolve: {
+    tsconfigPaths: true,
+    alias: {
+      'graceful-fs': 'c:/Users/Lalo/Documents/Freddie/shelfmind/src/lib/mocks/graceful-fs.ts',
+    },
+  },
   plugins: [
     devtools(),
     cloudflare({ viteEnvironment: { name: 'ssr' } }),
@@ -24,3 +29,5 @@ export default defineConfig({
     },
   },
 })
+
+
