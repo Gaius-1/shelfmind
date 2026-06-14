@@ -56,10 +56,21 @@ function DashboardContent({ orgId }: DashboardContentProps) {
   // Fallback stats if empty
   const activeStats = stats || {
     totalProducts: 0,
-    meanConfidence: 0.91,
+    meanConfidence: 0,
     flaggedCount: 0,
     totalJobs: 0,
     pendingDuplicates: 0,
+  }
+
+  const calculateElapsed = (startedAt: string | null, completedAt: string | null) => {
+    if (!startedAt) return '-'
+    const start = new Date(startedAt).getTime()
+    const end = completedAt ? new Date(completedAt).getTime() : Date.now()
+    const diff = Math.floor((end - start) / 1000)
+    if (diff < 60) return `${diff}s`
+    const mins = Math.floor(diff / 60)
+    const secs = diff % 60
+    return `${mins}m ${secs}s`
   }
 
   // Convert generic job to JobRow expected by RecentExtractionJobs
@@ -67,8 +78,8 @@ function DashboardContent({ orgId }: DashboardContentProps) {
     id: job.id,
     imageCount: job.imageCount,
     status: job.status as 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED',
-    avgConfidence: 0.89, // Assuming avg per job is not directly on the job model yet, mockup has 0.89
-    elapsed: '45s' // Mock elapsed
+    avgConfidence: undefined, // Requires stats per job
+    elapsed: calculateElapsed(job.startedAt, job.completedAt)
   }))
 
   return (
