@@ -18,6 +18,7 @@ export type GroupableExtraction = {
 	productGroupKey: string;
 	zxing: { barcode: string | null } | null;
 	vision: Partial<Record<string, string>> | null;
+	ocr?: string | null;
 	watermarkInfo?: {
 		auditId: string;
 		productDescription: string;
@@ -50,82 +51,270 @@ function parseFilename(
 }
 
 /**
- * Groups an array of extractions by combining:
- * 1. Barcode Matches (1.0)
- * 2. Watermark Description Matches (0.85)
- * 3. Filename Proximity (0.40) - for images from the same store visit within 3 frames
- * 4. Weight Blocker (0.95) - prevents merging different weights/sizes.
+ * Helper to compute Jaccard similarity of two strings based on word tokens.
+ */
+function getJaccardSimilarity(str1: string, str2: string): number {
+	const clean1 = (str1 || "").trim().toLowerCase();
+	const clean2 = (str2 || "").trim().toLowerCase();
+	if (!clean1 && !clean2) return 0;
+	if (clean1 === clean2) return 1.0;
+
+	const set1 = new Set(clean1.split(/\s+/).filter((t) => t.length > 1));
+	const set2 = new Set(clean2.split(/\s+/).filter((t) => t.length > 1));
+	if (set1.size === 0 || set2.size === 0) return 0;
+
+	const intersection = new Set([...set1].filter((x) => set2.has(x)));
+	const union = new Set([...set1, ...set2]);
+	return intersection.size / union.size;
+}
+
+/**
+ * Merges properties of multiple extractions to form a representative profile of a group.
+ */
+export function getGroupRepresentative<T extends GroupableExtraction>(group: T[]): T {
+	const rep = { ...group[0] };
+	
+	// If the group has multiple items, build a combined representation
+	if (group.length > 1) {
+		rep.zxing = rep.zxing ? { ...rep.zxing } : null;
+		rep.vision = rep.vision ? { ...rep.vision } : {};
+
+		for (let i = 1; i < group.length; i++) {
+			const item = group[i];
+			if (!rep.zxing?.barcode && item.zxing?.barcode) {
+				rep.zxing = { barcode: item.zxing.barcode };
+			}
+			if (item.vision) {
+				rep.vision = { ...rep.vision, ...item.vision };
+			}
+			if (!rep.watermarkInfo && item.watermarkInfo) {
+				rep.watermarkInfo = item.watermarkInfo;
+			}
+			if (item.ocr) {
+				rep.ocr = (rep.ocr || "") + " " + item.ocr;
+			}
+		}
+	}
+	return rep;
+}
+
+/**
+ * Computes similarity between two group representatives.
+ * Returns a score between 0.0 and 1.0, where 0 means incompatible / hard blocked.
+ */
+export function computeGroupSimilarity<T extends GroupableExtraction>(
+	a: T,
+	b: T,
+): number {
+	const aBarcode = a.zxing?.barcode || a.vision?.BARCODE || "";
+	const bBarcode = b.zxing?.barcode || b.vision?.BARCODE || "";
+
+	// 1. Barcode Match (Strongest signal)
+	if (aBarcode && bBarcode && aBarcode === bBarcode) {
+		return 1.0;
+	}
+
+	// Hard Blockers
+	// A. Barcode conflict
+	if (aBarcode && bBarcode && aBarcode !== bBarcode) {
+		return 0;
+	}
+
+	// B. Watermark Audit ID conflict
+	const aAuditId = a.watermarkInfo?.auditId || "";
+	const bAuditId = b.watermarkInfo?.auditId || "";
+	if (aAuditId && bAuditId && aAuditId !== bAuditId) {
+		return 0;
+	}
+
+	// C. Weight Blocker (Crucial constraint)
+	const aWeight = normalizeWeight(
+		a.watermarkInfo?.weight || a.vision?.WEIGHT || "",
+	);
+	const bWeight = normalizeWeight(
+		b.watermarkInfo?.weight || b.vision?.WEIGHT || "",
+	);
+	if (aWeight && bWeight && aWeight !== bWeight) {
+		return 0;
+	}
+
+	// D. Manufacturer Blocker
+	const aManuf = a.watermarkInfo?.manufacturer || a.vision?.MANUFACTURER || "";
+	const bManuf = b.watermarkInfo?.manufacturer || b.vision?.MANUFACTURER || "";
+	if (
+		aManuf &&
+		bManuf &&
+		normalizeGroupKey(aManuf) !== normalizeGroupKey(bManuf)
+	) {
+		return 0;
+	}
+
+	// Semantic overlaps
+	const aBrand = a.vision?.BRAND || "";
+	const bBrand = b.vision?.BRAND || "";
+	const aItem = a.vision?.ITEM_NAME || "";
+	const bItem = b.vision?.ITEM_NAME || "";
+
+	const brandSim = getJaccardSimilarity(aBrand, bBrand);
+	const itemSim = getJaccardSimilarity(aItem, bItem);
+
+	const aDesc = a.watermarkInfo?.productDescription || a.productGroupKey || "";
+	const bDesc = b.watermarkInfo?.productDescription || b.productGroupKey || "";
+	const descSim =
+		normalizeGroupKey(aDesc) === normalizeGroupKey(bDesc)
+			? 1.0
+			: getJaccardSimilarity(aDesc, bDesc);
+
+	const ocrSim = getJaccardSimilarity(a.ocr || "", b.ocr || "");
+
+	// Weighted similarity score
+	let score = 0;
+	let weights = 0;
+
+	if (aBrand || bBrand) {
+		score += brandSim * 0.4;
+		weights += 0.4;
+	}
+	if (aItem || bItem) {
+		score += itemSim * 0.4;
+		weights += 0.4;
+	}
+	if (aDesc || bDesc) {
+		score += descSim * 0.5;
+		weights += 0.5;
+	}
+	if (a.ocr || b.ocr) {
+		score += ocrSim * 0.2;
+		weights += 0.2;
+	}
+
+	// Boost score if sequential store visit filenames
+	const fnA = parseFilename(a.fileName);
+	const fnB = parseFilename(b.fileName);
+	if (fnA && fnB && fnA.storeId === fnB.storeId) {
+		const dist = Math.abs(fnA.imageId - fnB.imageId);
+		if (dist <= 3) {
+			score += 0.15;
+			weights += 0.15;
+		}
+	}
+
+	return weights > 0 ? score / weights : 0;
+}
+
+/**
+ * Checks if two groups have conflicting sides (e.g. both already contain a Front,
+ * or both already contain a Back/Side), preventing them from merging.
+ */
+function hasConflictingSides<T extends GroupableExtraction>(
+	groupA: T[],
+	groupB: T[],
+): boolean {
+	const auditA = groupA.map((x) => x.watermarkInfo?.auditId).find((id) => !!id);
+	const auditB = groupB.map((x) => x.watermarkInfo?.auditId).find((id) => !!id);
+
+	// If they share the same non-empty audit ID, allow them to merge
+	if (auditA && auditB && auditA === auditB) {
+		return false;
+	}
+
+	const isFront = (side: string) => side.toLowerCase() === "front";
+	const isBack = (side: string) =>
+		["back", "left", "right", "top", "bottom", "barcode"].includes(
+			side.toLowerCase(),
+		);
+
+	const getSides = (group: T[]) =>
+		group.map((x) => x.watermarkInfo?.side || x.vision?.SIDE || "");
+
+	const sidesA = getSides(groupA);
+	const sidesB = getSides(groupB);
+
+	const hasFrontA = sidesA.some(isFront);
+	const hasFrontB = sidesB.some(isFront);
+	if (hasFrontA && hasFrontB) return true;
+
+	const hasBackA = sidesA.some(isBack);
+	const hasBackB = sidesB.some(isBack);
+	if (hasBackA && hasBackB) return true;
+
+	return false;
+}
+
+/**
+ * Groups processed extractions using a Greedy Bipartite Matcher.
  */
 export function groupExtractions<T extends GroupableExtraction>(
 	extractions: T[],
 ): Record<string, T[]> {
-	const groups: Record<string, T[]> = {};
+	if (extractions.length === 0) return {};
 
-	for (const ext of extractions) {
-		const extBarcode = ext.zxing?.barcode || ext.vision?.BARCODE || "";
-		const extWeight = normalizeWeight(ext.vision?.WEIGHT ?? "");
-		const extAuditId = ext.watermarkInfo?.auditId || "";
-		const extDesc =
-			ext.watermarkInfo?.productDescription || ext.productGroupKey || "";
-		const extDescKey = normalizeGroupKey(extDesc);
-		const fnInfo = parseFilename(ext.fileName);
+	// 1. Initial State: place each extraction in its own list
+	const activeGroups: T[][] = extractions.map((ext) => [ext]);
 
-		let assignedKey = "";
+	// 2. Greedy Matching Loop
+	const similarityThreshold = 0.35;
+	let iterations = 0;
+	const maxIterations = extractions.length * extractions.length;
 
-		// Compare against existing groups
-		for (const [groupKey, groupExts] of Object.entries(groups)) {
-			const rep = groupExts[0];
-			const repBarcode = rep.zxing?.barcode || rep.vision?.BARCODE || "";
-			const repWeight = normalizeWeight(rep.vision?.WEIGHT ?? "");
-			const repAuditId = rep.watermarkInfo?.auditId || "";
-			const repDesc =
-				rep.watermarkInfo?.productDescription || rep.productGroupKey || "";
-			const repDescKey = normalizeGroupKey(repDesc);
-			const repFnInfo = parseFilename(rep.fileName);
+	while (activeGroups.length > 1 && iterations < maxIterations) {
+		iterations++;
+		let bestPair: [number, number] | null = null;
+		let bestScore = -1;
 
-			// 1. Weight Blocker
-			if (extWeight && repWeight && extWeight !== repWeight) {
-				continue;
-			}
+		// Find pair of groups with highest similarity score
+		for (let i = 0; i < activeGroups.length; i++) {
+			for (let j = i + 1; j < activeGroups.length; j++) {
+				// Apply group-wide side conflict blocker
+				if (hasConflictingSides(activeGroups[i], activeGroups[j])) {
+					continue;
+				}
 
-			// 2. Barcode Match (Strongest signal)
-			if (extBarcode && repBarcode && extBarcode === repBarcode) {
-				assignedKey = groupKey;
-				break;
-			}
+				const repA = getGroupRepresentative(activeGroups[i]);
+				const repB = getGroupRepresentative(activeGroups[j]);
+				const score = computeGroupSimilarity(repA, repB);
 
-			// 3. Exact Normalized Watermark Product Description Match
-			if (extDescKey && repDescKey && extDescKey === repDescKey) {
-				assignedKey = groupKey;
-				break;
-			}
-
-			// 4. Filename Proximity Match (Within same store visit, sequential images)
-			if (extAuditId && repAuditId && extAuditId === repAuditId) {
-				if (fnInfo && repFnInfo && fnInfo.storeId === repFnInfo.storeId) {
-					const dist = Math.abs(fnInfo.imageId - repFnInfo.imageId);
-					if (dist <= 3) {
-						// Sequential images in the same visit, make sure they don't have conflicting descriptions
-						if (extDescKey && repDescKey && extDescKey !== repDescKey) {
-							continue;
-						}
-						assignedKey = groupKey;
-						break;
-					}
+				if (score > bestScore) {
+					bestScore = score;
+					bestPair = [i, j];
 				}
 			}
 		}
 
-		// Fallback: create a new group key
-		if (!assignedKey) {
-			const uniqueId = ext.fileName.split(".")[0];
-			assignedKey = extDescKey ? `${extDescKey}__${uniqueId}` : uniqueId;
+		// If no compatible pair passes threshold, stop merging
+		if (bestPair === null || bestScore < similarityThreshold) {
+			break;
 		}
 
-		if (!groups[assignedKey]) {
-			groups[assignedKey] = [];
+		// Merge group j into group i
+		const [idxI, idxJ] = bestPair;
+		activeGroups[idxI] = [...activeGroups[idxI], ...activeGroups[idxJ]];
+
+		// Remove group j
+		activeGroups.splice(idxJ, 1);
+	}
+
+	// 3. Compile output dictionary
+	const groups: Record<string, T[]> = {};
+	for (const group of activeGroups) {
+		const rep = getGroupRepresentative(group);
+		const extBarcode = rep.zxing?.barcode || rep.vision?.BARCODE || "";
+		const extDesc =
+			rep.watermarkInfo?.productDescription || rep.productGroupKey || "";
+		const extDescKey = normalizeGroupKey(extDesc);
+		const uniqueId = rep.fileName.split(".")[0];
+
+		// Assign a stable key for this group
+		let groupKey = "";
+		if (extBarcode) {
+			groupKey = `barcode_${extBarcode}`;
+		} else if (extDescKey) {
+			groupKey = `${extDescKey}__${uniqueId}`;
+		} else {
+			groupKey = uniqueId;
 		}
-		groups[assignedKey].push(ext);
+
+		groups[groupKey] = group;
 	}
 
 	return groups;

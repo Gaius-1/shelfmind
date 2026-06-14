@@ -18,7 +18,7 @@ import {
 } from "../types/imdb.ts";
 import { normalizeRecord, normalizeField } from "./normalization.ts";
 import { getUpload } from "./storage.ts";
-import { groupExtractions } from "./grouping.ts";
+import { groupExtractions, computeGroupSimilarity } from "./grouping.ts";
 import { getBinding } from "./cloudflare.ts";
 import { parseWatermark } from "./watermark-parser.ts";
 
@@ -119,15 +119,21 @@ async function runVisionModel(
 	const aiBinding = getBinding("AI");
 
 	// Llama 3.2 Vision requires base64-encoded image + messages array format
-	const base64Image = Buffer.from(imageBuffer).toString('base64')
+	const base64Image = Buffer.from(imageBuffer).toString("base64");
 
 	if (aiBinding) {
 		try {
-			console.log("[Pipeline] Calling Cloudflare AI binding (Llama 3.2 Vision)...");
+			console.log(
+				"[Pipeline] Calling Cloudflare AI binding (Llama 3.2 Vision)...",
+			);
 			const input = {
 				image: base64Image,
 				messages: [
-					{ role: "system", content: "You are a precise product data extraction assistant. Follow all instructions exactly." },
+					{
+						role: "system",
+						content:
+							"You are a precise product data extraction assistant. Follow all instructions exactly.",
+					},
 					{ role: "user", content: prompt },
 				],
 			};
@@ -136,10 +142,14 @@ async function runVisionModel(
 				input,
 			);
 			// Llama 3.2 Vision returns { response: string } or { choices: [...] }
-			const text = (result as any)?.response 
-				|| (result as any)?.choices?.[0]?.message?.content 
-				|| "";
-			console.log("[Pipeline] AI response preview:", String(text).substring(0, 200));
+			const text =
+				(result as any)?.response ||
+				(result as any)?.choices?.[0]?.message?.content ||
+				"";
+			console.log(
+				"[Pipeline] AI response preview:",
+				String(text).substring(0, 200),
+			);
 			return text;
 		} catch (err) {
 			console.error("[Pipeline] Cloudflare AI binding failed:", err);
@@ -164,7 +174,11 @@ async function runVisionModel(
 					body: JSON.stringify({
 						image: base64Image,
 						messages: [
-							{ role: "system", content: "You are a precise product data extraction assistant. Follow all instructions exactly." },
+							{
+								role: "system",
+								content:
+									"You are a precise product data extraction assistant. Follow all instructions exactly.",
+							},
 							{ role: "user", content: prompt },
 						],
 					}),
@@ -178,9 +192,11 @@ async function runVisionModel(
 			}
 
 			const json = await response.json();
-			return (json as any).result?.response 
-				|| (json as any).result?.choices?.[0]?.message?.content 
-				|| "";
+			return (
+				(json as any).result?.response ||
+				(json as any).result?.choices?.[0]?.message?.content ||
+				""
+			);
 		} catch (err) {
 			console.error("[Pipeline] Cloudflare AI REST API failed:", err);
 			throw err;
@@ -375,7 +391,7 @@ Return ONLY valid JSON. Do not include markdown wraps or code block formatting. 
 				jsonStr = structuredOutput.substring(start, end + 1);
 			}
 		}
-		
+
 		const parsed = JSON.parse(jsonStr.trim());
 
 		productGroupKey = parsed.PRODUCT_GROUP_KEY || "";
@@ -581,12 +597,18 @@ export async function processJob(
 				}[] = [];
 
 				for (const ext of groupExts) {
+					// Scale candidate confidence by similarity to group representative
+					let matchFactor = 1.0;
+					if (ext !== groupExts[0]) {
+						matchFactor = computeGroupSimilarity(groupExts[0], ext);
+					}
+
 					// Barcode can come from ZXing
 					if (col === "BARCODE" && ext.zxing?.barcode) {
 						candidates.push({
 							value: ext.zxing.barcode,
 							source: "ZXing",
-							confidence: 1.0,
+							confidence: 1.0 * matchFactor,
 						});
 					}
 
@@ -608,7 +630,7 @@ export async function processJob(
 							candidates.push({
 								value: val,
 								source: "Watermark",
-								confidence: 0.9,
+								confidence: 0.9 * matchFactor,
 							});
 						}
 					}
@@ -618,7 +640,7 @@ export async function processJob(
 						candidates.push({
 							value: ext.vision[col]!,
 							source: "Vision",
-							confidence: 0.8,
+							confidence: 0.8 * matchFactor,
 						});
 					}
 
@@ -631,7 +653,7 @@ export async function processJob(
 							candidates.push({
 								value: match[1].trim(),
 								source: "OCR",
-								confidence: 0.6,
+								confidence: 0.6 * matchFactor,
 							});
 						}
 					}
