@@ -87,70 +87,7 @@ export const CustomNode = memo(({ data, isConnectable }: NodeProps) => {
 		);
 	}
 
-	// Render a custom 3D cylindrical database container for the database write node
-	if (nodeData.iconType === "database") {
-		return (
-			<div
-				className={`relative w-[220px] h-[170px] ${ringClass} transition-all duration-300`}
-			>
-				<Handle
-					type="target"
-					position={Position.Left}
-					isConnectable={isConnectable}
-					className="w-3 h-3 border-2 border-background bg-muted-foreground"
-				/>
 
-				{/* Cylinder Top Cap */}
-				<div className="absolute top-0 left-0 w-full h-7 rounded-[50%/14px] bg-card border border-border shadow-sm flex items-center justify-between px-6 z-20 bg-gradient-to-r from-card via-muted/40 to-muted/20">
-					<Cloudflare className="w-3.5 h-3.5 text-primary" />
-					<span className="text-[9px] font-mono font-bold text-muted-foreground uppercase tracking-wider">
-						SQLite / D1
-					</span>
-				</div>
-
-				{/* Cylinder Body */}
-				<div className="absolute top-[14px] left-0 w-full h-[156px] rounded-b-[50%/24px] border-b border-l border-r border-border bg-card shadow-lg bg-gradient-to-r from-card via-card/95 to-card/90 flex flex-col justify-between overflow-hidden">
-					{/* Platter Lines for 3D Database Look */}
-					<div className="absolute top-[35px] left-0 w-full h-[1px] bg-border/40 shadow-[0_1px_2px_rgba(0,0,0,0.05)]" />
-					<div className="absolute top-[80px] left-0 w-full h-[1px] bg-border/40 shadow-[0_1px_2px_rgba(0,0,0,0.05)]" />
-					<div className="absolute top-[125px] left-0 w-full h-[1px] bg-border/40 shadow-[0_1px_2px_rgba(0,0,0,0.05)]" />
-
-					{/* Content overlay */}
-					<div className="flex-1 flex flex-col justify-around px-4 pt-4 pb-3 text-center relative z-10">
-						{/* Title Section */}
-						<div className="flex items-center justify-center gap-1.5 mt-2">
-							<HugeiconsIcon
-								icon={Database01Icon}
-								strokeWidth={2.5}
-								className="size-4 text-primary"
-							/>
-							<span className="text-[13px] font-bold text-foreground">
-								{nodeData.title}
-							</span>
-						</div>
-
-						{/* Description Section */}
-						<div className="text-[10px] text-muted-foreground leading-snug px-1">
-							{nodeData.description}
-						</div>
-
-						{/* Platter 3 bottom status info */}
-						<div className="text-[9px] font-mono text-muted-foreground/80 pb-1 flex items-center justify-center gap-1">
-							<span className="inline-block w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-							D1 edge storage active
-						</div>
-					</div>
-				</div>
-
-				<Handle
-					type="source"
-					position={Position.Right}
-					isConnectable={isConnectable}
-					className="w-3 h-3 border-2 border-background bg-muted-foreground"
-				/>
-			</div>
-		);
-	}
 
 	return (
 		<div
