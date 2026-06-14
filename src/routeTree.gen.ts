@@ -36,6 +36,7 @@ import { Route as ApiJobsJobIdRouteImport } from './routes/api/jobs/$jobId'
 import { Route as ApiDuplicatesPairIdRouteImport } from './routes/api/duplicates/$pairId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiJobsJobIdStreamRouteImport } from './routes/api/jobs/$jobId/stream'
+import { Route as ApiJobsJobIdRetryRouteImport } from './routes/api/jobs/$jobId/retry'
 import { Route as ApiJobsJobIdRecordsRouteImport } from './routes/api/jobs/$jobId/records'
 import { Route as ApiJobsJobIdExportRouteImport } from './routes/api/jobs/$jobId/export'
 
@@ -176,6 +177,11 @@ const ApiJobsJobIdStreamRoute = ApiJobsJobIdStreamRouteImport.update({
   path: '/stream',
   getParentRoute: () => ApiJobsJobIdRoute,
 } as any)
+const ApiJobsJobIdRetryRoute = ApiJobsJobIdRetryRouteImport.update({
+  id: '/retry',
+  path: '/retry',
+  getParentRoute: () => ApiJobsJobIdRoute,
+} as any)
 const ApiJobsJobIdRecordsRoute = ApiJobsJobIdRecordsRouteImport.update({
   id: '/records',
   path: '/records',
@@ -216,6 +222,7 @@ export interface FileRoutesByFullPath {
   '/api/products/': typeof ApiProductsIndexRoute
   '/api/jobs/$jobId/export': typeof ApiJobsJobIdExportRoute
   '/api/jobs/$jobId/records': typeof ApiJobsJobIdRecordsRoute
+  '/api/jobs/$jobId/retry': typeof ApiJobsJobIdRetryRoute
   '/api/jobs/$jobId/stream': typeof ApiJobsJobIdStreamRoute
 }
 export interface FileRoutesByTo {
@@ -246,6 +253,7 @@ export interface FileRoutesByTo {
   '/api/products': typeof ApiProductsIndexRoute
   '/api/jobs/$jobId/export': typeof ApiJobsJobIdExportRoute
   '/api/jobs/$jobId/records': typeof ApiJobsJobIdRecordsRoute
+  '/api/jobs/$jobId/retry': typeof ApiJobsJobIdRetryRoute
   '/api/jobs/$jobId/stream': typeof ApiJobsJobIdStreamRoute
 }
 export interface FileRoutesById {
@@ -278,6 +286,7 @@ export interface FileRoutesById {
   '/api/products/': typeof ApiProductsIndexRoute
   '/api/jobs/$jobId/export': typeof ApiJobsJobIdExportRoute
   '/api/jobs/$jobId/records': typeof ApiJobsJobIdRecordsRoute
+  '/api/jobs/$jobId/retry': typeof ApiJobsJobIdRetryRoute
   '/api/jobs/$jobId/stream': typeof ApiJobsJobIdStreamRoute
 }
 export interface FileRouteTypes {
@@ -311,6 +320,7 @@ export interface FileRouteTypes {
     | '/api/products/'
     | '/api/jobs/$jobId/export'
     | '/api/jobs/$jobId/records'
+    | '/api/jobs/$jobId/retry'
     | '/api/jobs/$jobId/stream'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -341,6 +351,7 @@ export interface FileRouteTypes {
     | '/api/products'
     | '/api/jobs/$jobId/export'
     | '/api/jobs/$jobId/records'
+    | '/api/jobs/$jobId/retry'
     | '/api/jobs/$jobId/stream'
   id:
     | '__root__'
@@ -372,6 +383,7 @@ export interface FileRouteTypes {
     | '/api/products/'
     | '/api/jobs/$jobId/export'
     | '/api/jobs/$jobId/records'
+    | '/api/jobs/$jobId/retry'
     | '/api/jobs/$jobId/stream'
   fileRoutesById: FileRoutesById
 }
@@ -586,6 +598,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiJobsJobIdStreamRouteImport
       parentRoute: typeof ApiJobsJobIdRoute
     }
+    '/api/jobs/$jobId/retry': {
+      id: '/api/jobs/$jobId/retry'
+      path: '/retry'
+      fullPath: '/api/jobs/$jobId/retry'
+      preLoaderRoute: typeof ApiJobsJobIdRetryRouteImport
+      parentRoute: typeof ApiJobsJobIdRoute
+    }
     '/api/jobs/$jobId/records': {
       id: '/api/jobs/$jobId/records'
       path: '/records'
@@ -643,12 +662,14 @@ const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
 interface ApiJobsJobIdRouteChildren {
   ApiJobsJobIdExportRoute: typeof ApiJobsJobIdExportRoute
   ApiJobsJobIdRecordsRoute: typeof ApiJobsJobIdRecordsRoute
+  ApiJobsJobIdRetryRoute: typeof ApiJobsJobIdRetryRoute
   ApiJobsJobIdStreamRoute: typeof ApiJobsJobIdStreamRoute
 }
 
 const ApiJobsJobIdRouteChildren: ApiJobsJobIdRouteChildren = {
   ApiJobsJobIdExportRoute: ApiJobsJobIdExportRoute,
   ApiJobsJobIdRecordsRoute: ApiJobsJobIdRecordsRoute,
+  ApiJobsJobIdRetryRoute: ApiJobsJobIdRetryRoute,
   ApiJobsJobIdStreamRoute: ApiJobsJobIdStreamRoute,
 }
 

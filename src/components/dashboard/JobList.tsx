@@ -1,7 +1,8 @@
 import * as React from 'react'
 import { Link } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent } from '#/components/ui/card.tsx'
-import { Calendar, Image as ImageIcon, AlertCircle, ArrowRight, CheckCircle2, Clock } from 'lucide-react'
+import { Calendar, Image as ImageIcon, AlertCircle, ArrowRight, CheckCircle2, Clock, RefreshCw } from 'lucide-react'
 import { cn } from '#/lib/utils.ts'
 
 export interface Job {
@@ -21,6 +22,25 @@ interface JobListProps {
 }
 
 export function JobList({ jobs }: JobListProps) {
+  const queryClient = useQueryClient()
+  const [retrying, setRetrying] = React.useState<string | null>(null)
+
+  const handleRetry = async (jobId: string) => {
+    try {
+      setRetrying(jobId)
+      const res = await fetch(`/api/jobs/${jobId}/retry`, { method: 'POST' })
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData.error || await res.text())
+      }
+      queryClient.invalidateQueries({ queryKey: ['jobs'] })
+    } catch (err: any) {
+      alert('Failed to retry job: ' + err.message)
+    } finally {
+      setRetrying(null)
+    }
+  }
+
   const formatDate = (isoString: string | null) => {
     if (!isoString) return '-'
     const date = new Date(isoString)
@@ -175,7 +195,7 @@ export function JobList({ jobs }: JobListProps) {
                     Review Records
                     <ArrowRight className="size-3" />
                   </Link>
-                ) : isProcessing || isPending ? (
+                ) : isProcessing ? (
                   <Link
                     to="/dashboard/jobs/$jobId"
                     params={{ jobId: job.id } as any}
@@ -188,10 +208,35 @@ export function JobList({ jobs }: JobListProps) {
                     View Live Pipeline
                     <ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" />
                   </Link>
-                ) : isFailed ? (
-                  <span className="text-xs font-bold text-rose-500 px-3 py-1.5">
-                    Failed Ingestion
-                  </span>
+                ) : isPending || isFailed ? (
+                  <div className="flex items-center gap-2">
+                    {isFailed ? (
+                      <span className="text-xs font-bold text-rose-500 px-3 py-1.5">
+                        Failed Ingestion
+                      </span>
+                    ) : (
+                      <Link
+                        to="/dashboard/jobs/$jobId"
+                        params={{ jobId: job.id } as any}
+                        className="flex items-center gap-1.5 h-9 px-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/40 dark:border-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-xs font-bold transition-all shadow-xs group"
+                      >
+                        <span className="flex h-2 w-2 relative">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                        </span>
+                        View Live Pipeline
+                        <ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" />
+                      </Link>
+                    )}
+                    <button
+                      onClick={() => handleRetry(job.id)}
+                      disabled={retrying === job.id}
+                      className="flex items-center gap-1.5 h-9 px-4 rounded-xl bg-muted/50 text-muted-foreground hover:bg-foreground hover:text-background text-xs font-bold transition-all shadow-xs disabled:opacity-50"
+                    >
+                      <RefreshCw className={cn("size-3.5", retrying === job.id && "animate-spin")} />
+                      Retry Job
+                    </button>
+                  </div>
                 ) : null}
               </div>
             </CardContent>

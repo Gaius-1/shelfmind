@@ -56,6 +56,26 @@ export async function getUpload(
 }
 
 /**
+ * Lists all uploaded product image keys for a job.
+ */
+export async function listUploads(orgId: string, jobId: string): Promise<string[]> {
+  const prefix = `uploads/${orgId}/${jobId}/`
+  const binding = getR2Binding('PRODUCT_IMAGES')
+
+  if (binding) {
+    const listed = await binding.list({ prefix })
+    return listed.objects.map((o: any) => o.key)
+  }
+
+  // Local fallback
+  const { readdir } = await import('fs/promises')
+  const dirPath = join(MOCK_DIR, 'uploads', orgId, jobId)
+  if (!existsSync(dirPath)) return []
+  const files = await readdir(dirPath)
+  return files.map(f => `uploads/${orgId}/${jobId}/${f}`)
+}
+
+/**
  * Saves a generated export file.
  */
 export async function saveExport(
