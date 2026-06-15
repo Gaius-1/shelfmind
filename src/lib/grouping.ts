@@ -10,10 +10,9 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 	const productMap = new Map<string, IMDBProduct>();
 
 	for (const entry of rawExtractions) {
-		// Use Image Tag or Barcode as the primary grouping key
-		const groupKey = entry.imageTag || entry.BARCODE;
-		
-		if (!groupKey) continue;
+		// Use Image Tag or Barcode as the primary grouping key.
+		// CRITICAL FALLBACK: If Qwen fails to extract both, do NOT drop the image. Group it by its own filename so it can be flagged in the Review Queue.
+		const groupKey = entry.imageTag || entry.BARCODE || entry.sourceImages[0] || crypto.randomUUID();
 
 		if (!productMap.has(groupKey)) {
 			// deep copy so we don't mutate the original array elements
