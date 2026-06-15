@@ -43,7 +43,40 @@ export class JobReporter {
 	}
 }
 
-async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, env: any = null): Promise<IMDBProduct | null> {
+async function extractWithGoogleVision(base64Image: string, env: any = null): Promise<string> {
+    const apiKey = env?.GOOGLE_VISION_API_KEY || (typeof process !== "undefined" ? process.env.GOOGLE_VISION_API_KEY : undefined);
+    
+    if (!apiKey) {
+        console.warn("[Google Vision] Missing GOOGLE_VISION_API_KEY. Skipping OCR pass.");
+        return "";
+    }
+
+    try {
+        const response = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                requests: [{
+                    image: { content: base64Image },
+                    features: [{ type: "DOCUMENT_TEXT_DETECTION" }]
+                }]
+            })
+        });
+
+        if (!response.ok) {
+            console.error("[Google Vision] API error:", await response.text());
+            return "";
+        }
+
+        const data = await response.json();
+        return data.responses?.[0]?.fullTextAnnotation?.text || "";
+    } catch (e) {
+        console.error("[Google Vision] Failed to fetch:", e);
+        return "";
+    }
+}
+
+async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrText: string, env: any = null): Promise<IMDBProduct | null> {
     const base64Image = Buffer.from(imageBuffer).toString("base64");
     
     // Read from Cloudflare env bindings if available, otherwise fallback to process.env
@@ -60,6 +93,11 @@ ITEM_NAME, BARCODE, MANUFACTURER, BRAND, WEIGHT, PACKAGING_TYPE, COUNTRY, VARIAN
 Note 1: imageTag is the watermark or text at the very bottom of the image (e.g. maverick research ID or GH1234...).
 Note 2: For COUNTRY, look closely for phrases like "Made in [Country]", "Produced in [Country]", or "Product of [Country]".
 Note 3: If text is blurry, illegible, or not explicitly printed on the package, you MUST output an empty string "". DO NOT guess, infer, or hallucinate missing values.
+Note 4 (CRITICAL): Here is the exact raw text extracted from this image by an enterprise OCR engine:
+---
+${ocrText || "No readable text found."}
+---
+Use the image for visual layout context, but RELY ENTIRELY on the provided OCR text for the exact spelling of words. Do not hallucinate words that are not in the OCR text!
 Return ONLY valid JSON. Do not wrap in markdown blocks.`;
 
     const response = await fetch(endpoint, {
@@ -157,8 +195,22 @@ export async function processJob(
                 return;
             }
 
-            const extracted = await extractWithQwen(buffer, fileName, env);
+            const base64Image = Buffer.from(buffer).toString("base64");
+            
+            // Step 1: Perception (Google Cloud Vision)
+            let ocrText = "";
+            if (env?.GOOGLE_VISION_API_KEY || (typeof process !== "undefined" && process.env.GOOGLE_VISION_API_KEY)) {
+                ocrText = await extractWithGoogleVision(base64Image, env);
+            }
+
+            // Step 2: Cognition (Qwen3-VL)
+            const extracted = await extractWithQwen(buffer, fileName, ocrText, env);
             if (extracted) {
+                // Attach the OCR text to the product so it saves to the DB later
+                if (ocrText) {
+                    if (!extracted.rawVisionData) extracted.rawVisionData = {};
+                    extracted.rawVisionData[`${fileName}_ocr`] = ocrText;
+                }
                 rawExtractions.push(extracted);
                 await reporter.addLog("structured", `[${fileName}] Data extracted successfully`, "success");
             } else {
@@ -225,7 +277,7 @@ export async function processJob(
                 rawExtraction: { 
                     images: product.sourceImages.map(f => ({ 
                         fileName: f, 
-                        ocr: null, 
+                        ocr: product.rawVisionData ? product.rawVisionData[`${f}_ocr`] || null : null, 
                         zxing: null, 
                         vision: product.rawVisionData ? product.rawVisionData[f] : null 
                     })) 
