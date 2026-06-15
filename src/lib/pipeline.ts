@@ -59,6 +59,7 @@ async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, env: 
 ITEM_NAME, BARCODE, MANUFACTURER, BRAND, WEIGHT, PACKAGING_TYPE, COUNTRY, VARIANT, TYPE, FRAGRANCE_FLAVOR, PROMOTION, ADDONS, TAGLINE, imageTag.
 Note 1: imageTag is the watermark or text at the very bottom of the image (e.g. maverick research ID or GH1234...).
 Note 2: For COUNTRY, look closely for phrases like "Made in [Country]", "Produced in [Country]", or "Product of [Country]".
+Note 3: If text is blurry, illegible, or not explicitly printed on the package, you MUST output an empty string "". DO NOT guess, infer, or hallucinate missing values.
 Return ONLY valid JSON. Do not wrap in markdown blocks.`;
 
     const response = await fetch(endpoint, {
