@@ -315,7 +315,7 @@ async function processSingleImage(
 
 	// 2. VLM OCR
 	const ocrStart = Date.now();
-	const ocrCacheKey = `extraction:${orgId}:${imageHash}:ocr`;
+	const ocrCacheKey = `extraction:${orgId}:${imageHash}:ocr:v2`;
 	let ocrOutput = await getCachedResult(ocrCacheKey);
 	if (!ocrOutput) {
 		const prompt = `Read all text visible on the main product being held or centered in the foreground of this image.
@@ -348,7 +348,7 @@ on its own line, prefixed with 'WATERMARK:'. Output all other product label text
 
 	// 3. VLM Structured Data
 	const structuredStart = Date.now();
-	const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured`;
+	const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured:v2`;
 	let structuredOutput = await getCachedResult(structuredCacheKey);
 	if (!structuredOutput) {
 		const prompt = `You are a structured data extractor. Analyze the product label and return a JSON object with the following fields:
@@ -728,8 +728,7 @@ export async function processJob(
 					// Watermark parsed values (0.9 confidence)
 					if (ext.watermarkInfo) {
 						let val: string | null = null;
-						if (col === "ITEM_NAME" && ext.watermarkInfo.productDescription)
-							val = ext.watermarkInfo.productDescription;
+						// ITEM_NAME removed to prevent watermark from overriding clean VLM output
 						if (col === "WEIGHT" && ext.watermarkInfo.weight)
 							val = ext.watermarkInfo.weight;
 						if (col === "PACKAGING_TYPE" && ext.watermarkInfo.packaging)
