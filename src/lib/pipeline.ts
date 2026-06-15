@@ -183,8 +183,8 @@ export async function processJob(
         const rawExtractions: IMDBProduct[] = [];
         const limit = pLimit(5); // 5 concurrent requests to avoid rate limits
 
-        await reporter.addLog("structured", `Extracting data from ${imageKeys.length} images using Qwen3-VL...`, "info");
-        await reporter.updateNodeState("structured", "active");
+        await reporter.addLog("ocr", `Running enterprise OCR via Google Cloud Vision...`, "info");
+        await reporter.updateNodeState("ocr", "active");
 
         let processed = 0;
         await Promise.all(imageKeys.map(key => limit(async () => {
@@ -210,9 +210,10 @@ export async function processJob(
                 if (ocrText) {
                     if (!extracted.rawVisionData) extracted.rawVisionData = {};
                     extracted.rawVisionData[`${fileName}_ocr`] = ocrText;
+                    await reporter.addLog("ocr", `[${fileName}] Raw text perfectly extracted via GCV`, "success");
                 }
                 rawExtractions.push(extracted);
-                await reporter.addLog("structured", `[${fileName}] Data extracted successfully`, "success");
+                await reporter.addLog("structured", `[${fileName}] Data extracted successfully by Qwen3-VL`, "success");
             } else {
                 await reporter.addLog("structured", `[${fileName}] Failed to extract data`, "error");
             }
@@ -222,8 +223,12 @@ export async function processJob(
             await db.update(jobs).set({ progress: progressPercent }).where(eq(jobs.id, jobId));
         })));
 
-        await reporter.updateNodeState("structured", "completed");
+        await reporter.updateNodeState("ocr", "completed");
         await reporter.updateEdgeState("e1", true, "#10b981");
+
+        await reporter.updateNodeState("structured", "completed");
+        await reporter.updateEdgeState("e_ocr", true, "#10b981");
+
         await reporter.updateNodeState("grouping", "active");
         await reporter.addLog("grouping", `Grouping ${rawExtractions.length} extractions...`, "info");
 

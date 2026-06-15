@@ -13,4 +13,5 @@ __unconfig*
 todos.json
 .agents/
 memory.md
-public/product-images/
+public/product-images/*
+.dev.vars

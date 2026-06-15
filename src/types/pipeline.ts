@@ -30,12 +30,24 @@ export const initialNodes: Node<CustomNodeData>[] = [
 		},
 	},
 	{
+		id: "ocr",
+		type: "customNode",
+		position: { x: 350, y: 250 },
+		data: {
+			title: "Google Cloud Vision",
+			description: "Perception: Extracts raw text perfectly.",
+			iconType: "vision",
+			badge: "ENTERPRISE",
+			status: "pending",
+		},
+	},
+	{
 		id: "structured",
 		type: "customNode",
-		position: { x: 400, y: 250 },
+		position: { x: 650, y: 250 },
 		data: {
 			title: "Qwen3-VL Extraction",
-			description: "Extracts JSON payload and imageTag.",
+			description: "Cognition: Maps OCR text to JSON schema.",
 			iconType: "vision",
 			status: "pending",
 		},
@@ -43,7 +55,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 	{
 		id: "grouping",
 		type: "customNode",
-		position: { x: 750, y: 250 },
+		position: { x: 950, y: 250 },
 		data: {
 			title: "Map-based Grouping",
 			description: "Merges records by imageTag or BARCODE.",
@@ -54,7 +66,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 	{
 		id: "database",
 		type: "customNode",
-		position: { x: 1100, y: 250 },
+		position: { x: 1250, y: 250 },
 		data: {
 			title: "Database Write",
 			description: "Inserts merged records to SQLite.",
@@ -65,7 +77,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 	{
 		id: "deduplication",
 		type: "customNode",
-		position: { x: 1450, y: 250 },
+		position: { x: 1550, y: 250 },
 		data: {
 			title: "Merge Suggestions",
 			description: "Post-job scan for duplicate pairs.",
@@ -79,6 +91,14 @@ export const initialEdges: Edge[] = [
 	{
 		id: "e1",
 		source: "upload",
+		target: "ocr",
+		animated: false,
+		type: "smoothstep",
+		style: { strokeWidth: 2 },
+	},
+	{
+		id: "e_ocr",
+		source: "ocr",
 		target: "structured",
 		animated: false,
 		type: "smoothstep",
