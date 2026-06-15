@@ -250,21 +250,15 @@ async function runVisionModel(
 }
 
 /**
- * Process a single image: runs ZXing, OCR VLM, and Structured VLM.
+ * Phase 1: ZXing and OCR (to extract watermark and audit ID)
  */
-async function processSingleImage(
+async function processPhase1(
 	orgId: string,
 	jobId: string,
 	fileName: string,
 	imageBuffer: ArrayBuffer,
 	reporter: JobReporter,
-): Promise<
-	RawExtractionPerImage & {
-		productGroupKey: string;
-		watermarkInfo?: any;
-		durations?: { zxing: number; ocr: number; structured: number };
-	}
-> {
+) {
 	const imageHash = await hashBuffer(imageBuffer);
 
 	await reporter.addLog(
@@ -315,7 +309,7 @@ async function processSingleImage(
 
 	// 2. VLM OCR
 	const ocrStart = Date.now();
-	const ocrCacheKey = `extraction:${orgId}:${imageHash}:ocr:v2`;
+	const ocrCacheKey = `extraction:${orgId}:${imageHash}:ocr`;
 	let ocrOutput = await getCachedResult(ocrCacheKey);
 	if (!ocrOutput) {
 		const prompt = `Read all text visible on the main product being held or centered in the foreground of this image.
@@ -346,10 +340,59 @@ on its own line, prefixed with 'WATERMARK:'. Output all other product label text
 	}
 	const ocrDuration = Date.now() - ocrStart;
 
-	// 3. VLM Structured Data
+	// Parse Watermark from OCR (or fallback)
+	let watermarkInfo: any = null;
+	let watermarkRawStr = "";
+
+	if (ocrOutput) {
+		const ocrMatch = ocrOutput.match(/[A-Z]{0,3}\d{4,}[^\n]+/i);
+		if (ocrMatch) {
+			watermarkRawStr = ocrMatch[0];
+		}
+	}
+
+	if (!watermarkRawStr) {
+		const filenameWithoutExt = fileName.replace(/\.[^/.]+$/, "");
+		if (/^[A-Z]{0,3}\d{4,}/i.test(filenameWithoutExt)) {
+			watermarkRawStr = filenameWithoutExt;
+		}
+	}
+
+	if (watermarkRawStr) {
+		watermarkInfo = parseWatermark(watermarkRawStr);
+	}
+
+	return {
+		fileName,
+		imageHash,
+		buffer: imageBuffer,
+		zxing: barcodeResult ? { barcode: barcodeResult } : null,
+		ocr: ocrOutput,
+		watermarkInfo,
+		durations: {
+			zxing: zxingDuration,
+			ocr: ocrDuration,
+		},
+	};
+}
+
+/**
+ * Phase 2: Structured Data Extraction (Runs only on representative image)
+ */
+async function processPhase2(
+	orgId: string,
+	jobId: string,
+	fileName: string,
+	imageHash: string,
+	imageBuffer: ArrayBuffer,
+	ocrOutput: string,
+	watermarkInfo: any,
+	reporter: JobReporter,
+) {
 	const structuredStart = Date.now();
-	const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured:v2`;
+	const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured`;
 	let structuredOutput = await getCachedResult(structuredCacheKey);
+	
 	if (!structuredOutput) {
 		const prompt = `You are a structured data extractor. Analyze the product label and return a JSON object with the following fields:
 - ITEM_NAME: Exact product name (do NOT include the Brand or Manufacturer, and do NOT copy the Watermark here)
@@ -365,8 +408,8 @@ on its own line, prefixed with 'WATERMARK:'. Output all other product label text
 - PROMOTION: Slogans or text about offers/sales (e.g. "2 for R25", "Buy 1 Get 1 Free")
 - ADDONS: Free items or additives (e.g. "with free spoon")
 - TAGLINE: Slogan or marketing phrase
-- WATERMARK_RAW: The exact text of the digital watermark/overlay at the bottom or left edge of the image. This is metadata from the field auditor's app, NOT part of the product label. It typically follows the pattern: '{AuditID} {PRODUCT_NAME} {WEIGHT} {PACKAGING} {MANUFACTURER} {COUNTRY} · {Side}'. Extract it verbatim.
-- PRODUCT_GROUP_KEY: Using the WATERMARK_RAW text, extract the product description portion (everything after the GH/audit ID and before the side indicator like 'Front'/'Back'). This groups multiple angles of this same product.
+- WATERMARK_RAW: Extract the digital watermark/overlay text exactly as it appears at the bottom or left edge.
+- PRODUCT_GROUP_KEY: Using the WATERMARK_RAW text, extract the product description portion.
 
 CRITICAL: Focus ONLY on the single main product being held or centered. Ignore all products visible on shelves in the background.
 
@@ -398,10 +441,9 @@ Return ONLY valid JSON. Do not include markdown wraps or code block formatting. 
 		);
 	}
 
-	// Parse structured JSON output
-	let visionData: Partial<Record<ImdbColumnName, string>> = {};
+	let visionData: Partial<Record<any, string>> = {};
 	let productGroupKey = "";
-	let watermarkInfo: any = null;
+
 	try {
 		let jsonStr = structuredOutput;
 		const jsonMatch = structuredOutput.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -416,7 +458,6 @@ Return ONLY valid JSON. Do not include markdown wraps or code block formatting. 
 		}
 
 		const parsed = JSON.parse(jsonStr.trim());
-
 		productGroupKey = parsed.PRODUCT_GROUP_KEY || "";
 
 		for (const col of IMDB_COLUMNS) {
@@ -424,91 +465,34 @@ Return ONLY valid JSON. Do not include markdown wraps or code block formatting. 
 				visionData[col] = String(parsed[col]);
 			}
 		}
-
-		let watermarkRawStr = parsed.WATERMARK_RAW;
-
-		// 1st Fallback: If AI missed WATERMARK_RAW, try to find Audit ID in raw OCR text
-		if (!watermarkRawStr && ocrOutput) {
-			const ocrMatch = ocrOutput.match(/[A-Z]{0,3}\d{4,}[^\n]+/i);
-			if (ocrMatch) {
-				watermarkRawStr = ocrMatch[0];
-				console.log(`[Pipeline] Fallback: Found watermark in OCR text: ${watermarkRawStr}`);
-			}
+		
+		if (!productGroupKey && parsed.WATERMARK_RAW) {
+			const wm = parseWatermark(parsed.WATERMARK_RAW);
+			if (wm) productGroupKey = wm.productDescription;
 		}
 
-		// 2nd Fallback: Check if the filename itself is the watermark string (common if app renames it)
-		if (!watermarkRawStr) {
-			const filenameWithoutExt = fileName.replace(/\.[^/.]+$/, "");
-			if (/^[A-Z]{0,3}\d{4,}/i.test(filenameWithoutExt)) {
-				watermarkRawStr = filenameWithoutExt;
-				console.log(`[Pipeline] Fallback: Using filename as watermark: ${watermarkRawStr}`);
-			}
-		}
-
-		if (watermarkRawStr) {
-			watermarkInfo = parseWatermark(watermarkRawStr);
-			if (watermarkInfo) {
-				if (watermarkInfo.productDescription) {
-					productGroupKey = watermarkInfo.productDescription;
-				}
-				await reporter.addLog(
-					"structured",
-					`[${fileName}] Detected Retail Audit Watermark: ${watermarkRawStr}`,
-					"success",
-				);
-				await reporter.addLog(
-					"structured",
-					`[${fileName}] Parsed Audit ID: ${watermarkInfo.auditId} | Product: ${watermarkInfo.productDescription} | Side: ${watermarkInfo.side}`,
-					"info",
-				);
-
-				// Discard hallucinated barcodes that copy the audit ID from the watermark
-				if (watermarkInfo.auditId && visionData.BARCODE) {
-					const auditDigits = watermarkInfo.auditId.replace(/[^\d]/g, "").replace(/^0+/, "");
-					const visionDigits = visionData.BARCODE.replace(/[^\d]/g, "").replace(/^0+/, "");
-					if (auditDigits && visionDigits === auditDigits) {
-						console.log(`[Pipeline] Discarded watermark audit ID barcode hallucination: ${visionData.BARCODE}`);
-						await reporter.addLog(
-							"structured",
-							`[${fileName}] Discarded hallucinated barcode matching watermark audit ID: ${visionData.BARCODE}`,
-							"warning",
-						);
-						visionData.BARCODE = "";
-					}
-				}
-			}
-		}
 	} catch (err) {
-		console.error(
-			`[Pipeline] Failed to parse structured JSON for ${fileName}:`,
-			err,
-		);
+		console.error(`[Pipeline] Failed to parse structured JSON for ${fileName}:`, err);
 	}
 
-	// If no group key found, fallback to Brand + Item name or filename
+	// Fallback group key
+	if (!productGroupKey && watermarkInfo) {
+		productGroupKey = watermarkInfo.productDescription;
+	}
 	if (!productGroupKey) {
 		const brand = visionData.BRAND || "";
 		const item = visionData.ITEM_NAME || "";
-		productGroupKey =
-			brand || item ? `${brand} ${item}`.trim() : fileName.split(".")[0];
+		productGroupKey = brand || item ? `${brand} ${item}`.trim() : fileName.split(".")[0];
 	}
+
 	const structuredDuration = Date.now() - structuredStart;
 
 	return {
-		fileName,
-		zxing: barcodeResult ? { barcode: barcodeResult } : null,
-		ocr: ocrOutput,
 		vision: visionData,
 		productGroupKey,
-		watermarkInfo,
-		durations: {
-			zxing: zxingDuration,
-			ocr: ocrDuration,
-			structured: structuredDuration,
-		},
+		durations: { structured: structuredDuration }
 	};
 }
-
 /**
  * Main job processing engine.
  */
@@ -557,6 +541,9 @@ export async function processJob(
 		let totalOcr = 0;
 		let totalStructured = 0;
 
+		// Phase 1: Run ZXing and OCR on all images to gather metadata
+		const phase1Results: any[] = [];
+
 		for (let i = 0; i < imageKeys.length; i++) {
 			const key = imageKeys[i];
 			const fileName = key.split("/").pop() || `image_${i}`;
@@ -567,60 +554,103 @@ export async function processJob(
 
 			if (!buffer) {
 				console.warn(`[Pipeline] Could not load image file: ${fileName}`);
-				await reporter.addLog(
-					"upload",
-					`Could not load image: ${fileName}`,
-					"error",
-				);
+				await reporter.addLog("upload", `Could not load image: ${fileName}`, "error");
 				continue;
 			}
-			await reporter.addLog(
-				"upload",
-				`Loaded ${fileName} successfully`,
-				"success",
-			);
+			await reporter.addLog("upload", `Loaded ${fileName} successfully`, "success");
 
-			console.log(
-				`[Pipeline] Processing image ${i + 1}/${imageKeys.length}: ${fileName}`,
-			);
+			console.log(`[Pipeline] Phase 1 - Processing image ${i + 1}/${imageKeys.length}: ${fileName}`);
 
 			if (i === 0) {
 				const uploadBadge = totalUploadMs < 1000 ? `${totalUploadMs}ms` : `${(totalUploadMs / 1000).toFixed(1)}s`;
 				await reporter.updateNodeState("upload", "completed", undefined, undefined, uploadBadge);
-
 				await reporter.updateEdgeState("e1", true, "#10b981");
 				await reporter.updateEdgeState("e2", true, "#10b981");
 				await reporter.updateEdgeState("e3", true, "#10b981");
-
 				await reporter.updateNodeState("zxing", "active");
 				await reporter.updateNodeState("ocr", "active");
 				await reporter.updateNodeState("structured", "active");
 			}
 
-			const ext = await processSingleImage(
-				orgId,
-				jobId,
-				fileName,
-				buffer,
-				reporter,
-			);
-			extractions.push(ext);
+			const extPhase1 = await processPhase1(orgId, jobId, fileName, buffer, reporter);
+			phase1Results.push(extPhase1);
 
-			if (ext.durations) {
-				totalZxing += ext.durations.zxing || 0;
-				totalOcr += ext.durations.ocr || 0;
-				totalStructured += ext.durations.structured || 0;
+			if (extPhase1.durations) {
+				totalZxing += extPhase1.durations.zxing || 0;
+				totalOcr += extPhase1.durations.ocr || 0;
+			}
+			
+			const progressPercent = Math.min(40, 10 + Math.round(((i + 1) / imageKeys.length) * 30));
+			await db.update(jobs).set({ progress: progressPercent }).where(eq(jobs.id, jobId));
+		}
+
+		// Pre-Group Phase 1 results
+		const preGroups: Record<string, any[]> = {};
+		for (const p1 of phase1Results) {
+			const auditId = p1.watermarkInfo?.auditId;
+			const fnMatch = p1.fileName.match(/^S(\d+)_(\d+)/i);
+			let groupKey = p1.fileName; // default fallback
+
+			if (auditId) {
+				groupKey = `audit_${auditId}`;
+			} else if (fnMatch) {
+				// Group by store + nearby image ID block (divide by 5 so nearby IDs group together)
+				const storeId = fnMatch[1];
+				const block = Math.floor(parseInt(fnMatch[2], 10) / 5);
+				groupKey = `seq_${storeId}_${block}`;
 			}
 
-			// Update progress incrementally
-			const progressPercent = Math.min(
-				80,
-				10 + Math.round(((i + 1) / imageKeys.length) * 70),
+			if (!preGroups[groupKey]) preGroups[groupKey] = [];
+			preGroups[groupKey].push(p1);
+		}
+
+		// Phase 2: Structured Data Extraction (1 per pre-group)
+		let phase2Count = 0;
+		const totalGroups = Object.keys(preGroups).length;
+
+		for (const [groupKey, group] of Object.entries(preGroups)) {
+			// Select Representative Image
+			// 1. Has Barcode
+			// 2. Side is 'Back' or 'Barcode'
+			// 3. Fallback to first
+			let rep = group[0];
+			for (const img of group) {
+				if (img.zxing?.barcode) {
+					rep = img;
+					break;
+				}
+				const side = (img.watermarkInfo?.side || "").toLowerCase();
+				if (side === "back" || side === "barcode" || side === "second_side") {
+					rep = img;
+				}
+			}
+
+			console.log(`[Pipeline] Phase 2 - Running structured extraction for pre-group ${groupKey} on ${rep.fileName}`);
+			const extPhase2 = await processPhase2(
+				orgId, jobId, rep.fileName, rep.imageHash, rep.buffer, rep.ocr, rep.watermarkInfo, reporter
 			);
-			await db
-				.update(jobs)
-				.set({ progress: progressPercent })
-				.where(eq(jobs.id, jobId));
+			
+			if (extPhase2.durations) {
+				totalStructured += extPhase2.durations.structured || 0;
+			}
+
+			// Distribute results to all images in pre-group
+			for (const img of group) {
+				// We assemble the final raw extraction
+				const finalExt: any = {
+					fileName: img.fileName,
+					zxing: img.zxing || rep.zxing, // Share barcode if missing
+					ocr: img.ocr,
+					vision: extPhase2.vision,      // Shared Structured Data
+					productGroupKey: extPhase2.productGroupKey,
+					watermarkInfo: img.watermarkInfo || rep.watermarkInfo
+				};
+				extractions.push(finalExt);
+			}
+
+			phase2Count++;
+			const progressPercent = Math.min(80, 40 + Math.round((phase2Count / totalGroups) * 40));
+			await db.update(jobs).set({ progress: progressPercent }).where(eq(jobs.id, jobId));
 		}
 
 		// Extraction phase complete
@@ -728,7 +758,8 @@ export async function processJob(
 					// Watermark parsed values (0.9 confidence)
 					if (ext.watermarkInfo) {
 						let val: string | null = null;
-						// ITEM_NAME removed to prevent watermark from overriding clean VLM output
+						if (col === "ITEM_NAME" && ext.watermarkInfo.productDescription)
+							val = ext.watermarkInfo.productDescription;
 						if (col === "WEIGHT" && ext.watermarkInfo.weight)
 							val = ext.watermarkInfo.weight;
 						if (col === "PACKAGING_TYPE" && ext.watermarkInfo.packaging)
