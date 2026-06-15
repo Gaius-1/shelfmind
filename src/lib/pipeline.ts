@@ -309,7 +309,7 @@ async function processPhase1(
 
 	// 2. VLM OCR
 	const ocrStart = Date.now();
-	const ocrCacheKey = `extraction:${orgId}:${imageHash}:ocr`;
+	const ocrCacheKey = `extraction:${orgId}:${imageHash}:ocr_v2`;
 	let ocrOutput = await getCachedResult(ocrCacheKey);
 	if (!ocrOutput) {
 		const prompt = `Read all text visible on the main product being held or centered in the foreground of this image.
@@ -400,7 +400,7 @@ async function processPhase2(
 	const structuredStart = Date.now();
 	// Add suffix to cache key if missingFields is used
 	const cacheSuffix = missingFields && missingFields.length > 0 ? `_fallback_${missingFields.join("-")}` : "";
-	const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured${cacheSuffix}`;
+	const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured_v2${cacheSuffix}`;
 	let structuredOutput = await getCachedResult(structuredCacheKey);
 	
 	if (!structuredOutput) {
