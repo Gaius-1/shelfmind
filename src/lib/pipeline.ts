@@ -186,6 +186,20 @@ export async function processJob(
             const recordId = crypto.randomUUID();
             newRecordIds.push(recordId);
 
+            const isMissingCritical = !product.BARCODE || !product.ITEM_NAME || !product.BRAND;
+            const filledFieldsCount = Object.keys(product).filter(k => 
+                k !== "imageTag" && k !== "sourceImages" && !!(product as any)[k]
+            ).length;
+            const totalFields = 13;
+            let confidence = Math.round((filledFieldsCount / totalFields) * 100) / 100;
+            
+            // Penalize confidence if critical fields are missing
+            if (isMissingCritical) {
+                confidence = Math.min(confidence, 0.70);
+            }
+            
+            const flagged = confidence < 0.75;
+
             await db.insert(imdbRecords).values({
                 id: recordId,
                 jobId,
@@ -203,8 +217,8 @@ export async function processJob(
                 PROMOTION: product.PROMOTION || "",
                 ADDONS: product.ADDONS || "",
                 TAGLINE: product.TAGLINE || "",
-                confidence: 0.9,
-                flagged: false,
+                confidence,
+                flagged,
                 rawExtraction: { images: product.sourceImages.map(f => ({ fileName: f, ocr: null, zxing: null, vision: null })) },
                 fieldMetadata: {} as any, 
                 productGroupKey: product.imageTag || product.BARCODE || "unknown",
