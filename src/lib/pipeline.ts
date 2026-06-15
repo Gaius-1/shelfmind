@@ -116,7 +116,8 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
             ADDONS: parsed.ADDONS || "",
             TAGLINE: parsed.TAGLINE || "",
             imageTag: parsed.imageTag || "",
-            sourceImages: [fileName]
+            sourceImages: [fileName],
+            rawVisionData: { [fileName]: parsed }
         };
     } catch (e) {
         console.error(`[Qwen3-VL] Failed to parse JSON for ${fileName}`, e);
@@ -219,7 +220,14 @@ export async function processJob(
                 TAGLINE: product.TAGLINE || "",
                 confidence,
                 flagged,
-                rawExtraction: { images: product.sourceImages.map(f => ({ fileName: f, ocr: null, zxing: null, vision: null })) },
+                rawExtraction: { 
+                    images: product.sourceImages.map(f => ({ 
+                        fileName: f, 
+                        ocr: null, 
+                        zxing: null, 
+                        vision: product.rawVisionData ? product.rawVisionData[f] : null 
+                    })) 
+                },
                 fieldMetadata: {} as any, 
                 productGroupKey: product.imageTag || product.BARCODE || "unknown",
             });

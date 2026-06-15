@@ -27,6 +27,9 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 				}
 			});
 			existing.sourceImages.push(...entry.sourceImages);
+			if (entry.rawVisionData) {
+				existing.rawVisionData = { ...existing.rawVisionData, ...entry.rawVisionData };
+			}
 		}
 	}
 	return Array.from(productMap.values());

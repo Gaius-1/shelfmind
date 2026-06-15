@@ -114,6 +114,7 @@ export interface IMDBProduct {
 	// Metadata for grouping
 	imageTag?: string;
 	sourceImages: string[];
+	rawVisionData?: Record<string, any>;
 }
 
 export interface ImdbRecordWithMeta {
