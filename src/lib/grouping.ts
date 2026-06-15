@@ -22,18 +22,63 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 	// Sort by highest density first so the clearest image dictates the base record
 	const sortedExtractions = [...rawExtractions].sort((a, b) => getDensity(b) - getDensity(a));
 
+	// Helper: Levenshtein distance for fuzzy barcode matching
+	const levenshtein = (a: string, b: string): number => {
+		if (a.length === 0) return b.length;
+		if (b.length === 0) return a.length;
+		const matrix = Array.from({ length: b.length + 1 }, (_, i) => [i]);
+		for (let j = 1; j <= a.length; j++) matrix[0][j] = j;
+		for (let i = 1; i <= b.length; i++) {
+			for (let j = 1; j <= a.length; j++) {
+				if (b.charAt(i - 1) === a.charAt(j - 1)) {
+					matrix[i][j] = matrix[i - 1][j - 1];
+				} else {
+					matrix[i][j] = Math.min(
+						matrix[i - 1][j - 1] + 1,
+						Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1)
+					);
+				}
+			}
+		}
+		return matrix[b.length][a.length];
+	};
+
 	for (const entry of sortedExtractions) {
 		const tag = normalizeStr(entry.imageTag);
 		const barcode = normalizeStr(entry.BARCODE);
 		const name = normalizeStr(entry.ITEM_NAME);
+		const brand = normalizeStr(entry.BRAND);
 
 		// Look for an existing group that matches ANY of these critical fields
 		let foundKey: string | null = null;
 		for (const [key, existing] of productMap.entries()) {
-			if (tag && tag.length > 3 && normalizeStr(existing.imageTag) === tag) { foundKey = key; break; }
-			if (barcode && barcode.length > 4 && normalizeStr(existing.BARCODE) === barcode) { foundKey = key; break; }
-			// If tag and barcode fail, fallback to matching exact Item Name (must be > 5 chars to avoid generic matching)
-			if (name && name.length > 5 && normalizeStr(existing.ITEM_NAME) === name) { foundKey = key; break; }
+			const extTag = normalizeStr(existing.imageTag);
+			const extBarcode = normalizeStr(existing.BARCODE);
+			const extName = normalizeStr(existing.ITEM_NAME);
+			const extBrand = normalizeStr(existing.BRAND);
+
+			// 1. Exact Tag Matching
+			if (tag && tag.length > 3 && extTag === tag) { foundKey = key; break; }
+			
+			// 2. Fuzzy Barcode Matching (Allow 1-2 OCR digit errors for full barcodes)
+			if (barcode && barcode.length > 8 && extBarcode && extBarcode.length > 8) {
+				if (levenshtein(barcode, extBarcode) <= 2) { foundKey = key; break; }
+			} else if (barcode && barcode.length > 4 && extBarcode === barcode) {
+				foundKey = key; break; // Exact match fallback for short barcodes
+			}
+
+			// 3. Fuzzy Item Name Matching (Substring matching, e.g. "Mok Soap" inside "Mok Fine Soap")
+			if (name && name.length > 4 && extName && extName.length > 4) {
+				if (extName.includes(name) || name.includes(extName)) { foundKey = key; break; }
+			}
+
+			// 4. BRAND isolation fallback (If both are unreadable but belong to same isolated brand)
+			if (brand && brand.length > 3 && extBrand === brand) {
+				// Only group by brand if they don't have conflicting barcodes/names
+				if (!barcode && !extBarcode && !name && !extName) {
+					foundKey = key; break;
+				}
+			}
 		}
 
 		// Use the found group, or create a new key prioritizing tag > barcode > filename
