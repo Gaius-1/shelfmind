@@ -97,6 +97,25 @@ export const FIELD_WEIGHTS: Record<ImdbColumnName, number> = {
 
 export type ImdbRecord = Record<ImdbColumnName, string>;
 
+export interface IMDBProduct {
+	ITEM_NAME: string;
+	BARCODE: string;
+	MANUFACTURER: string;
+	BRAND: string;
+	WEIGHT: string;
+	PACKAGING_TYPE: string;
+	COUNTRY: string;
+	VARIANT: string;
+	TYPE: string;
+	FRAGRANCE_FLAVOR: string;
+	PROMOTION: string;
+	ADDONS: string;
+	TAGLINE: string;
+	// Metadata for grouping
+	imageTag?: string;
+	sourceImages: string[];
+}
+
 export interface ImdbRecordWithMeta {
 	record: ImdbRecord;
 	confidence: number;
