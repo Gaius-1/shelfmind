@@ -400,17 +400,19 @@ async function processPhase2(
 	const structuredStart = Date.now();
 	// Add suffix to cache key if missingFields is used
 	const cacheSuffix = missingFields && missingFields.length > 0 ? `_fallback_${missingFields.join("-")}` : "";
-	const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured_v2${cacheSuffix}`;
+	const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured_v3${cacheSuffix}`;
 	let structuredOutput = await getCachedResult(structuredCacheKey);
 	
 	if (!structuredOutput) {
 		let prompt = "";
 		if (!missingFields || missingFields.length === 0) {
 			prompt = `You are a structured data extractor. Analyze the product label and return a JSON object with the following fields:
-- ITEM_NAME: Exact product name (do NOT include the Brand or Manufacturer, and do NOT copy the Watermark here)
+- WATERMARK_RAW: Extract the digital watermark/overlay text exactly as it appears at the bottom or left edge. (Do this FIRST to isolate it from the physical product).
+- PRODUCT_GROUP_KEY: Using the WATERMARK_RAW text, extract the product description portion.
+- ITEM_NAME: Exact product name from the PHYSICAL label (do NOT include the Brand or Manufacturer, and absolutely DO NOT copy the Watermark text here).
 - BARCODE: Barcode number (digits only)
-- MANUFACTURER: Manufacturer name
-- BRAND: Brand name
+- MANUFACTURER: Manufacturer name from the PHYSICAL label.
+- BRAND: Brand name from the PHYSICAL label.
 - WEIGHT: Weight or volume (e.g. 500g, 330ml, 1.5L)
 - PACKAGING_TYPE: Packaging format (Bottle, Can, Box, Pack, Jar, Pouch, etc.)
 - COUNTRY: Country of origin
@@ -420,15 +422,13 @@ async function processPhase2(
 - PROMOTION: Slogans or text about offers/sales (e.g. "2 for R25", "Buy 1 Get 1 Free")
 - ADDONS: Free items or additives (e.g. "with free spoon")
 - TAGLINE: Slogan or marketing phrase
-- WATERMARK_RAW: Extract the digital watermark/overlay text exactly as it appears at the bottom or left edge.
-- PRODUCT_GROUP_KEY: Using the WATERMARK_RAW text, extract the product description portion.
 
 CRITICAL: Focus ONLY on the single main product being held or centered. Ignore all products visible on shelves in the background.
 
 Return ONLY valid JSON. Do not include markdown wraps or code block formatting. Format:
 {
+  "WATERMARK_RAW": "...",
   "ITEM_NAME": "...",
-  "BARCODE": "...",
   ...
 }`;
 		} else {
@@ -608,7 +608,13 @@ export async function processJob(
 		}
 
 		// Pre-Group Phase 1 results
+		phase1Results.sort((a, b) => a.fileName.localeCompare(b.fileName));
+
 		const preGroups: Record<string, any[]> = {};
+		let currentSeqGroupKey = "";
+		let lastStoreId = "";
+		let lastImageId = -1;
+
 		for (const p1 of phase1Results) {
 			const auditId = p1.watermarkInfo?.auditId;
 			const fnMatch = p1.fileName.match(/^S(\d+)_(\d+)/i);
@@ -617,10 +623,17 @@ export async function processJob(
 			if (auditId) {
 				groupKey = `audit_${auditId}`;
 			} else if (fnMatch) {
-				// Group by store + nearby image ID block (divide by 5 so nearby IDs group together)
 				const storeId = fnMatch[1];
-				const block = Math.floor(parseInt(fnMatch[2], 10) / 5);
-				groupKey = `seq_${storeId}_${block}`;
+				const imageId = parseInt(fnMatch[2], 10);
+				
+				if (storeId === lastStoreId && Math.abs(imageId - lastImageId) <= 3) {
+					groupKey = currentSeqGroupKey;
+				} else {
+					groupKey = `seq_${storeId}_${imageId}`;
+					currentSeqGroupKey = groupKey;
+				}
+				lastStoreId = storeId;
+				lastImageId = imageId;
 			}
 
 			if (!preGroups[groupKey]) preGroups[groupKey] = [];
