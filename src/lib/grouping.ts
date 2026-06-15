@@ -8,6 +8,15 @@ import type { IMDBProduct } from "../types/imdb.ts";
  */
 export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promise<IMDBProduct[]> {
 	const normalizeStr = (s?: string) => (s ? s.toLowerCase().replace(/[^a-z0-9]/g, "") : "");
+	
+	// Advanced normalizer specifically for image tags to strip out photographer suffixes
+	const normalizeTag = (s?: string) => {
+		let str = normalizeStr(s);
+		// Strip common suffix noise that breaks substring matching
+		str = str.replace(/(firstside|secondside|thirdside|front|back|left|right|side|top|bottom)$/, "");
+		return str;
+	};
+
 	const productMap = new Map<string, IMDBProduct>();
 
 	// Calculate information density to prioritize the best extraction
@@ -44,7 +53,7 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 	};
 
 	for (const entry of sortedExtractions) {
-		const tag = normalizeStr(entry.imageTag);
+		const tag = normalizeTag(entry.imageTag);
 		const barcode = normalizeStr(entry.BARCODE);
 		const name = normalizeStr(entry.ITEM_NAME);
 		const brand = normalizeStr(entry.BRAND);
@@ -52,7 +61,7 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 		// Look for an existing group that matches ANY of these critical fields
 		let foundKey: string | null = null;
 		for (const [key, existing] of productMap.entries()) {
-			const extTag = normalizeStr(existing.imageTag);
+			const extTag = normalizeTag(existing.imageTag);
 			const extBarcode = normalizeStr(existing.BARCODE);
 			const extName = normalizeStr(existing.ITEM_NAME);
 			const extBrand = normalizeStr(existing.BRAND);
