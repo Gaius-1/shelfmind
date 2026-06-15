@@ -400,7 +400,7 @@ async function processPhase2(
 	const structuredStart = Date.now();
 	// Add suffix to cache key if missingFields is used
 	const cacheSuffix = missingFields && missingFields.length > 0 ? `_fallback_${missingFields.join("-")}` : "";
-	const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured_v3${cacheSuffix}`;
+	const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured_v4${cacheSuffix}`;
 	let structuredOutput = await getCachedResult(structuredCacheKey);
 	
 	if (!structuredOutput) {
@@ -409,7 +409,7 @@ async function processPhase2(
 			prompt = `You are a structured data extractor. Analyze the product label and return a JSON object with the following fields:
 - WATERMARK_RAW: Extract the digital watermark/overlay text exactly as it appears at the bottom or left edge. (Do this FIRST to isolate it from the physical product).
 - PRODUCT_GROUP_KEY: Using the WATERMARK_RAW text, extract the product description portion.
-- ITEM_NAME: Exact product name from the PHYSICAL label (do NOT include the Brand or Manufacturer, and absolutely DO NOT copy the Watermark text here).
+- ITEM_NAME: Full, exact product name as it appears on the physical label, including the brand name if it forms part of the title, and all descriptive sub-titles (e.g. 'Mummy's Kitchen Seasoning Powder, Stew Ragout'). Do NOT copy the Watermark text here.
 - BARCODE: Barcode number (digits only)
 - MANUFACTURER: Manufacturer name from the PHYSICAL label.
 - BRAND: Brand name from the PHYSICAL label.
@@ -432,8 +432,14 @@ Return ONLY valid JSON. Do not include markdown wraps or code block formatting. 
   ...
 }`;
 		} else {
-			prompt = `You are a structured data extractor. Analyze the product label and return ONLY the following missing fields in a JSON object:
+			prompt = `You are a structured data extractor doing a SECOND PASS on this image to find missing fields.
+Look extremely closely at the image to find the following missing fields:
 ${missingFields.map((f) => `- ${f}`).join("\n")}
+
+CRITICAL INSTRUCTIONS FOR DIFFICULT FIELDS:
+- BARCODE: Look carefully for the vertical black bars and extract the digits printed underneath them.
+- COUNTRY: Look for text that might be sideways, rotated, or very small (e.g., 'Made in Ghana', 'Made in P.R.C', 'Manufactured in...').
+- ITEM_NAME: Extract the full, descriptive product name including the brand and any sub-titles or flavors exactly as printed.
 
 CRITICAL: Focus ONLY on the single main product being held or centered. Ignore all products visible on shelves in the background.
 
@@ -671,9 +677,15 @@ export async function processJob(
 			}
 
 			// Fallback Loop for Missing Critical Fields
-			const criticalFields = ["MANUFACTURER", "BRAND", "WEIGHT", "COUNTRY", "PACKAGING_TYPE", "ITEM_NAME"];
+			const criticalFields = ["MANUFACTURER", "BRAND", "WEIGHT", "COUNTRY", "PACKAGING_TYPE", "ITEM_NAME", "BARCODE"];
 			let currentVision = { ...extPhase2.vision };
-			let missingFields = criticalFields.filter(f => !currentVision[f] || String(currentVision[f]).trim() === "");
+			const isEmpty = (val: any) => {
+				if (!val) return true;
+				const s = String(val).trim().toLowerCase();
+				if (s === "" || s === "not visible" || s === "not specified" || s === "no barcode" || s === "000000000000" || s === "none" || s === "unknown" || s === "null" || s === "n/a") return true;
+				return false;
+			};
+			let missingFields = criticalFields.filter(f => isEmpty(currentVision[f]));
 
 			if (missingFields.length > 0 && group.length > 1) {
 				// Query up to 2 other images in the group to find the missing fields
@@ -696,7 +708,7 @@ export async function processJob(
 						}
 					}
 
-					missingFields = criticalFields.filter(f => !currentVision[f] || String(currentVision[f]).trim() === "");
+					missingFields = criticalFields.filter(f => isEmpty(currentVision[f]));
 					if (missingFields.length === 0) break; // Break early if all found
 				}
 			}
