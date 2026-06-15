@@ -77,13 +77,27 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 
 			// 1. Fuzzy Tag Matching (Handle "Front" / "Back" edge suffixes by checking for substrings or very low Levenshtein)
 			if (tag && extTag && tag.length > 5 && extTag.length > 5) {
-				// If one string is almost entirely contained in the other (e.g. they share "gh000364912 u-fresh orange 350ml...")
+				// If one string is almost entirely contained in the other
 				if (tag.includes(extTag) || extTag.includes(tag)) {
 					foundKey = key; break;
 				}
-				// Or if they are mathematically very similar
+				// If they are mathematically very similar overall
 				if (levenshtein(tag, extTag) <= 4) {
 					foundKey = key; break;
+				}
+				
+				// Advanced: Tokenized Prefix Matching
+				// Data collectors often print "ID NAME SUFFIX". We extract the ID (first block of alphanumeric chars)
+				// Since normalizeTag removes spaces, we use the original imageTag to find the first token
+				const getPrefixToken = (s?: string) => s ? s.trim().split(/[\s_]+/)[0].toLowerCase() : "";
+				const prefixA = getPrefixToken(entry.imageTag);
+				const prefixB = getPrefixToken(existing.imageTag);
+				
+				if (prefixA && prefixB && prefixA.length > 6 && prefixB.length > 6) {
+					// If the tracking IDs are mathematically almost identical (e.g. COABBOU... vs COABIBOU...)
+					if (levenshtein(prefixA, prefixB) <= 2) {
+						foundKey = key; break;
+					}
 				}
 			}
 			
