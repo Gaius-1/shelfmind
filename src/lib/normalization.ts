@@ -105,6 +105,10 @@ const COUNTRY_MAP: Record<string, string> = {
 	india: "India",
 	cn: "China",
 	china: "China",
+	prc: "China",
+	"p.r.c": "China",
+	"p.r.c.": "China",
+	"people's republic of china": "China",
 	jp: "Japan",
 	japan: "Japan",
 	gh: "Ghana",
@@ -228,7 +232,7 @@ export function normalizeField(
 			return normalizeCountry(clean);
 		case "BARCODE":
 			// Strip any non-numeric characters for barcodes, except keep if alphanumeric is expected (usually only digits)
-			return clean.replace(/[^\d]/g, "").replace(/^0+/, "");
+			return clean.replace(/[^\d]/g, "");
 		default:
 			return clean;
 	}

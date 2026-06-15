@@ -400,7 +400,7 @@ async function processPhase2(
 	const structuredStart = Date.now();
 	// Add suffix to cache key if missingFields is used
 	const cacheSuffix = missingFields && missingFields.length > 0 ? `_fallback_${missingFields.join("-")}` : "";
-	const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured_v4${cacheSuffix}`;
+	const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured_v5${cacheSuffix}`;
 	let structuredOutput = await getCachedResult(structuredCacheKey);
 	
 	if (!structuredOutput) {
@@ -410,7 +410,7 @@ async function processPhase2(
 - WATERMARK_RAW: Extract the digital watermark/overlay text exactly as it appears at the bottom or left edge. (Do this FIRST to isolate it from the physical product).
 - PRODUCT_GROUP_KEY: Using the WATERMARK_RAW text, extract the product description portion.
 - ITEM_NAME: Full, exact product name as it appears on the physical label, including the brand name if it forms part of the title, and all descriptive sub-titles (e.g. 'Mummy's Kitchen Seasoning Powder, Stew Ragout'). Do NOT copy the Watermark text here.
-- BARCODE: Barcode number (digits only)
+- BARCODE: Barcode number (digits only). CRITICAL: Often, the very first digit (e.g. '6') is placed slightly to the left of the main barcode lines. You MUST include this leading digit so it forms a complete 13-digit or 12-digit number.
 - MANUFACTURER: Manufacturer name from the PHYSICAL label.
 - BRAND: Brand name from the PHYSICAL label.
 - WEIGHT: Weight or volume (e.g. 500g, 330ml, 1.5L)
@@ -437,7 +437,7 @@ Look extremely closely at the image to find the following missing fields:
 ${missingFields.map((f) => `- ${f}`).join("\n")}
 
 CRITICAL INSTRUCTIONS FOR DIFFICULT FIELDS:
-- BARCODE: Look carefully for the vertical black bars and extract the digits printed underneath them.
+- BARCODE: Look carefully for the vertical black bars and extract the digits printed underneath them. CRITICAL: Often, the very first digit (e.g. '6') is placed slightly to the left of the main barcode lines. You MUST include this leading digit so it forms a complete 13-digit or 12-digit number.
 - COUNTRY: Look for text that might be sideways, rotated, or very small (e.g., 'Made in Ghana', 'Made in P.R.C', 'Manufactured in...').
 - ITEM_NAME: Extract the full, descriptive product name including the brand and any sub-titles or flavors exactly as printed.
 
