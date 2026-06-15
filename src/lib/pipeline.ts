@@ -90,7 +90,7 @@ async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrTe
 
     const prompt = `You are a precise product data extraction assistant. Extract product details as a JSON object with EXACTLY these fields:
 ITEM_NAME, BARCODE, MANUFACTURER, BRAND, WEIGHT, PACKAGING_TYPE, COUNTRY, VARIANT, TYPE, FRAGRANCE_FLAVOR, PROMOTION, ADDONS, TAGLINE, imageTag.
-Note 1: imageTag is the watermark or text at the very bottom of the image (e.g. maverick research ID or GH1234...).
+Note 1 (CRITICAL): imageTag MUST be the unique alphanumeric serial tag printed on the edge/margin of the photo (e.g., GH000364912). Look carefully at the edges of the image or the OCR text for a sequence starting with letters followed by numbers. This is our primary grouping key.
 Note 2: For COUNTRY, look closely for phrases like "Made in [Country]", "Produced in [Country]", or "Product of [Country]".
 Note 3: If text is blurry, illegible, or not explicitly printed on the package, you MUST output an empty string "". DO NOT guess, infer, or hallucinate missing values.
 Note 4 (CRITICAL): Here is the exact raw text extracted from this image by an enterprise OCR engine:
