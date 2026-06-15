@@ -3,59 +3,17 @@ import type { ImdbColumnName } from "../types/imdb.ts";
 /**
  * Standardizes weight strings (e.g., "500 g" -> "500g", "0.5 kg" -> "500g").
  */
-export function normalizeWeight(raw: string): string {
-	if (!raw) return "";
-	let clean = raw.trim().toLowerCase();
-	if (clean.endsWith(".")) {
-		clean = clean.slice(0, -1);
-	}
+export function normalizeWeight(rawWeight: string): string {
+	if (!rawWeight) return "";
+	const match = rawWeight.match(/(\d+(?:\.\d+)?)\s*(G|KG|ML|L)/i);
+	if (!match) return rawWeight.toUpperCase().trim();
+	const [_, value, unit] = match;
+	return `${value}${unit.toUpperCase()}`;
+}
 
-	// Regex to match a number and its unit
-	const match = clean.match(
-		/^([\d.,]+)\s*(g|kg|ml|l|grams|kilograms|liters|litres|millilitres|milliliters|pcs|pack|pk|oz|fl\.?\s*oz)?$/,
-	);
-	if (match) {
-		const numStr = match[1].replace(",", ".");
-		const num = parseFloat(numStr);
-		const unit = match[2] || "";
-
-		if (!isNaN(num)) {
-			if (unit.startsWith("gram") || unit === "g") {
-				return `${num}g`;
-			}
-			if (unit.startsWith("kilogram") || unit === "kg") {
-				if (num < 1) {
-					return `${num * 1000}g`;
-				}
-				return `${num}kg`;
-			}
-			if (
-				unit.startsWith("milliliter") ||
-				unit.startsWith("millilitre") ||
-				unit === "ml"
-			) {
-				return `${num}ml`;
-			}
-			if (
-				unit.startsWith("liter") ||
-				unit.startsWith("litre") ||
-				unit === "l"
-			) {
-				if (num < 1) {
-					return `${num * 1000}ml`;
-				}
-				return `${num}l`;
-			}
-			if (unit === "pcs" || unit === "pc") return `${num}pcs`;
-			if (unit.startsWith("pack") || unit === "pk") return `${num}pack`;
-			if (unit === "oz") return `${num}oz`;
-			if (unit.includes("fl")) return `${num}fl oz`;
-			return `${num}${unit}`;
-		}
-	}
-
-	// Collapse spaces if it doesn't match standard patterns
-	return raw.trim().replace(/\s+/g, " ");
+export function normalizeBarcode(rawBarcode: string): string {
+	if (!rawBarcode) return "";
+	return rawBarcode.replace(/\D/g, "");
 }
 
 /**
@@ -231,8 +189,7 @@ export function normalizeField(
 		case "COUNTRY":
 			return normalizeCountry(clean);
 		case "BARCODE":
-			// Strip any non-numeric characters for barcodes, except keep if alphanumeric is expected (usually only digits)
-			return clean.replace(/[^\d]/g, "");
+			return normalizeBarcode(clean);
 		default:
 			return clean;
 	}
