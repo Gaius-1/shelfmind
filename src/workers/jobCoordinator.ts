@@ -127,7 +127,8 @@ export class JobCoordinator extends DurableObject<Env> {
 			totalCount,
 			badge,
 		});
-		await this.persist();
+		// Non-blocking persist to DO SQLite
+		this.ctx.waitUntil(this.persist());
 	}
 
 	async updateEdgeState(edgeId: string, animated: boolean, color: string) {
@@ -137,7 +138,8 @@ export class JobCoordinator extends DurableObject<Env> {
 				: edge,
 		);
 		this.broadcast({ type: "edge_update", edgeId, animated, color });
-		await this.persist();
+		// Non-blocking persist to DO SQLite
+		this.ctx.waitUntil(this.persist());
 	}
 
 	async addLog(
@@ -158,7 +160,8 @@ export class JobCoordinator extends DurableObject<Env> {
 		this.state.logs[nodeId].push(newLog);
 
 		this.broadcast({ type: "log", nodeId, log: newLog });
-		await this.persist();
+		// Non-blocking persist to DO SQLite
+		this.ctx.waitUntil(this.persist());
 	}
 
 	// Helper to send to all connected clients
