@@ -69,7 +69,7 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            model: "qwen-vl-max-latest",
+            model: "qwen-vl-max",
             messages: [
                 {
                     role: "user",
