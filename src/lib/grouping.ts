@@ -123,20 +123,33 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 			productMap.set(groupKey, { ...entry, sourceImages: [...entry.sourceImages] });
 		} else {
 			const existing = productMap.get(groupKey)!;
-			// Aggregation: Keep the most descriptive (longest) string for text fields
+			// Aggregation: Keep the most confident extraction, fallback to longest string
 			Object.keys(entry).forEach((key) => {
 				const k = key as keyof IMDBProduct;
-				if (k === 'sourceImages' || k === 'rawVisionData') return;
+				if (k === 'sourceImages' || k === 'rawVisionData' || k === 'fieldConfidence') return;
 				
 				const existingVal = existing[k];
 				const newVal = entry[k];
 
-				if (typeof newVal === "string") {
-					// Use descriptive length heuristic: longer text usually means fewer dropped characters
+				const existingConf = existing.fieldConfidence?.[k] ?? 0;
+				const newConf = entry.fieldConfidence?.[k] ?? 0;
+
+				// 1. AI Confidence Driven Merge
+				if (existingConf > 0 || newConf > 0) {
+					if (newConf > existingConf) {
+						(existing[k] as any) = newVal;
+						if (!existing.fieldConfidence) existing.fieldConfidence = {};
+						existing.fieldConfidence[k] = newConf;
+					}
+				} 
+				// 2. Length Heuristic Fallback
+				else if (typeof newVal === "string") {
 					if (!existingVal || (typeof existingVal === "string" && newVal.length > existingVal.length)) {
 						(existing[k] as any) = newVal;
 					}
-				} else if (!existingVal && newVal) {
+				} 
+				// 3. Simple Fallback
+				else if (!existingVal && newVal) {
 					(existing[k] as any) = newVal;
 				}
 			});

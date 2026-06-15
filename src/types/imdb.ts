@@ -111,10 +111,11 @@ export interface IMDBProduct {
 	PROMOTION: string;
 	ADDONS: string;
 	TAGLINE: string;
-	// Metadata for grouping
+	// Metadata for grouping and confidence
 	imageTag?: string;
 	sourceImages: string[];
 	rawVisionData?: Record<string, any>;
+	fieldConfidence?: Record<string, number>;
 }
 
 export interface ImdbRecordWithMeta {

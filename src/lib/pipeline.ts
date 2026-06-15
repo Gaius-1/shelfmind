@@ -90,6 +90,7 @@ async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrTe
 
     const prompt = `You are a precise product data extraction assistant. Extract product details as a JSON object with EXACTLY these fields:
 ITEM_NAME, BARCODE, MANUFACTURER, BRAND, WEIGHT, PACKAGING_TYPE, COUNTRY, VARIANT, TYPE, FRAGRANCE_FLAVOR, PROMOTION, ADDONS, TAGLINE, imageTag.
+ALSO, output a nested object named "fieldConfidence" containing a float (0.0 to 1.0) representing your mathematical certainty for each extracted field (e.g., {"ITEM_NAME": 0.95, "WEIGHT": 0.4}).
 Note 1 (CRITICAL): imageTag MUST be the unique serial tag printed on the edge/margin of the photo (e.g., "GH000364912 U-FRESH ORANGE 350ML..."). Extract the ENTIRE identifying string found on the margin, but EXCLUDE words like "Front", "Back", "Left", or "Right". This is our primary grouping key.
 Note 2: For COUNTRY, look closely for phrases like "Made in [Country]", "Produced in [Country]", or "Product of [Country]".
 Note 3: If text is blurry, illegible, or not explicitly printed on the package, you MUST output an empty string "". DO NOT guess, infer, or hallucinate missing values.
@@ -156,6 +157,7 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
             ADDONS: parsed.ADDONS || "",
             TAGLINE: parsed.TAGLINE || "",
             imageTag: parsed.imageTag || "",
+            fieldConfidence: parsed.fieldConfidence || {},
             sourceImages: [fileName],
             rawVisionData: { [fileName]: parsed }
         };
@@ -247,11 +249,31 @@ export async function processJob(
             newRecordIds.push(recordId);
 
             const isMissingCritical = !product.BARCODE || !product.ITEM_NAME || !product.BRAND;
-            const filledFieldsCount = Object.keys(product).filter(k => 
-                k !== "imageTag" && k !== "sourceImages" && !!(product as any)[k]
-            ).length;
-            const totalFields = 13;
-            let confidence = Math.round((filledFieldsCount / totalFields) * 100) / 100;
+            
+            const fieldMeta: Record<string, any> = {};
+            let totalConf = 0;
+            let confCount = 0;
+            
+            if (product.fieldConfidence) {
+                for (const key of Object.keys(product.fieldConfidence)) {
+                    if ((product as any)[key]) { // Only count if the field actually has a value
+                        const val = product.fieldConfidence[key];
+                        totalConf += val;
+                        confCount++;
+                        fieldMeta[key] = { value: (product as any)[key], source: "AI Extraction Pipeline", confidence: val };
+                    }
+                }
+            }
+            
+            let confidence = confCount > 0 ? (totalConf / confCount) : 0;
+            
+            // Fallback to old density calculation if AI didn't provide fieldConfidence
+            if (confCount === 0) {
+                const filledFieldsCount = Object.keys(product).filter(k => 
+                    k !== "imageTag" && k !== "sourceImages" && !!(product as any)[k]
+                ).length;
+                confidence = Math.round((filledFieldsCount / 13) * 100) / 100;
+            }
             
             // Penalize confidence if critical fields are missing
             if (isMissingCritical) {
@@ -287,7 +309,7 @@ export async function processJob(
                         vision: product.rawVisionData ? product.rawVisionData[f] : null 
                     })) 
                 },
-                fieldMetadata: {} as any, 
+                fieldMetadata: fieldMeta, 
                 productGroupKey: product.imageTag || product.BARCODE || "unknown",
             });
             await reporter.addLog("database", `Saved record: ${product.ITEM_NAME || product.BARCODE}`, "success");
