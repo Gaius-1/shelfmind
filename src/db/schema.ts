@@ -1,4 +1,4 @@
-import { sqliteTable, integer, text, real } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, integer, text, real, index } from 'drizzle-orm/sqlite-core'
 import { sql } from 'drizzle-orm'
 
 // ─── Better Auth Tables ──────────────────────────────────────────────────────
@@ -106,7 +106,10 @@ export const jobs = sqliteTable('jobs', {
   startedAt: text('started_at'),
   completedAt: text('completed_at'),
   error: text('error'),
-})
+}, (table) => ({
+  orgIdx: index('idx_jobs_org_id').on(table.organisationId),
+  statusIdx: index('idx_jobs_status').on(table.status),
+}))
 
 export const imdbRecords = sqliteTable('imdb_records', {
   id: text('id').primaryKey(),
@@ -151,7 +154,12 @@ export const imdbRecords = sqliteTable('imdb_records', {
 
   createdAt: text('created_at').default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').default(sql`(datetime('now'))`),
-})
+}, (table) => ({
+  jobIdx: index('idx_imdb_job_id').on(table.jobId),
+  orgIdx: index('idx_imdb_org_id').on(table.organisationId),
+  barcodeIdx: index('idx_imdb_barcode').on(table.BARCODE),
+  groupKeyIdx: index('idx_imdb_group_key').on(table.productGroupKey),
+}))
 
 // ─── Duplicate Pairs (Pre-Calculated Async Detection) ────────────────────────
 
@@ -171,4 +179,9 @@ export const duplicatePairs = sqliteTable('duplicate_pairs', {
   status: text('status').default('PENDING'), // 'PENDING' | 'DISMISSED' | 'MERGED'
   createdAt: text('created_at').default(sql`(datetime('now'))`),
   resolvedAt: text('resolved_at'),
-})
+}, (table) => ({
+  orgIdx: index('idx_duplicate_org_id').on(table.orgId),
+  recordAIdx: index('idx_duplicate_record_a').on(table.recordAId),
+  recordBIdx: index('idx_duplicate_record_b').on(table.recordBId),
+  statusIdx: index('idx_duplicate_status').on(table.status),
+}))

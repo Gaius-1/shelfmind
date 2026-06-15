@@ -15,6 +15,13 @@
       "when": 1781268248340,
       "tag": "0001_cultured_black_tom",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1781538885118,
+      "tag": "0002_demonic_groot",
+      "breakpoints": true
     }
   ]
 }
