@@ -69,8 +69,9 @@ function EditableCell({ record, columnName, value, orgId, jobId }: EditableCellP
   const mutation = useRecordMutation({ orgId, jobId, recordId: record.id })
   
   const metadata = record.fieldMetadata?.[columnName]
-  const confidence = metadata?.confidence ?? 0
-  const source = metadata?.source ?? 'Merged'
+  // Fall back to the overall record confidence if field-level metadata is not available
+  const confidence = metadata?.confidence ?? record.confidence ?? 0
+  const source = metadata?.source ?? 'AI Extraction Pipeline'
 
   const handleDoubleClick = () => {
     setTempValue(value || '')
@@ -394,8 +395,8 @@ function RecordDetailModal({ record, orgId, jobId, onClose }: RecordDetailModalP
               <FramePanel className="flex flex-col gap-3 max-h-[380px] overflow-y-auto pr-1">
                 {IMDB_COLUMNS.map((colName) => {
                   const metadata = record.fieldMetadata?.[colName]
-                  const confidence = metadata?.confidence ?? 0
-                  const source = metadata?.source ?? 'Merged'
+                  const confidence = metadata?.confidence ?? record.confidence ?? 0
+                  const source = metadata?.source ?? 'AI Extraction Pipeline'
 
                   return (
                     <div
