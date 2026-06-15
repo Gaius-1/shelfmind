@@ -345,15 +345,22 @@ on its own line, prefixed with 'WATERMARK:'. Output all other product label text
 	let watermarkRawStr = "";
 
 	if (ocrOutput) {
-		const ocrMatch = ocrOutput.match(/[A-Z]{0,3}\d{4,}[^\n]+/i);
-		if (ocrMatch) {
-			watermarkRawStr = ocrMatch[0];
+		// First try the WATERMARK: prefix as instructed in the prompt
+		const watermarkPrefixMatch = ocrOutput.match(/WATERMARK:\s*([^\n]+)/i);
+		if (watermarkPrefixMatch) {
+			watermarkRawStr = watermarkPrefixMatch[1].trim();
+		} else {
+			// Fallback: look for audit ID pattern, ignoring S\d+_ filenames
+			const ocrMatch = ocrOutput.match(/(?:^|\s)((?!S\d+_)[A-Z]{1,10}\d{3,}[^\n]+)/i);
+			if (ocrMatch) {
+				watermarkRawStr = ocrMatch[1].trim();
+			}
 		}
 	}
 
 	if (!watermarkRawStr) {
 		const filenameWithoutExt = fileName.replace(/\.[^/.]+$/, "");
-		if (/^[A-Z]{0,3}\d{4,}/i.test(filenameWithoutExt)) {
+		if (/^(?!S\d+_)[A-Z]{0,10}\d{3,}/i.test(filenameWithoutExt)) {
 			watermarkRawStr = filenameWithoutExt;
 		}
 	}
@@ -388,13 +395,18 @@ async function processPhase2(
 	ocrOutput: string,
 	watermarkInfo: any,
 	reporter: JobReporter,
+	missingFields?: string[]
 ) {
 	const structuredStart = Date.now();
-	const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured`;
+	// Add suffix to cache key if missingFields is used
+	const cacheSuffix = missingFields && missingFields.length > 0 ? `_fallback_${missingFields.join("-")}` : "";
+	const structuredCacheKey = `extraction:${orgId}:${imageHash}:structured${cacheSuffix}`;
 	let structuredOutput = await getCachedResult(structuredCacheKey);
 	
 	if (!structuredOutput) {
-		const prompt = `You are a structured data extractor. Analyze the product label and return a JSON object with the following fields:
+		let prompt = "";
+		if (!missingFields || missingFields.length === 0) {
+			prompt = `You are a structured data extractor. Analyze the product label and return a JSON object with the following fields:
 - ITEM_NAME: Exact product name (do NOT include the Brand or Manufacturer, and do NOT copy the Watermark here)
 - BARCODE: Barcode number (digits only)
 - MANUFACTURER: Manufacturer name
@@ -419,6 +431,17 @@ Return ONLY valid JSON. Do not include markdown wraps or code block formatting. 
   "BARCODE": "...",
   ...
 }`;
+		} else {
+			prompt = `You are a structured data extractor. Analyze the product label and return ONLY the following missing fields in a JSON object:
+${missingFields.map((f) => `- ${f}`).join("\n")}
+
+CRITICAL: Focus ONLY on the single main product being held or centered. Ignore all products visible on shelves in the background.
+
+Return ONLY valid JSON. Do not include markdown wraps or code block formatting. Format:
+{
+  "${missingFields[0]}": "..."
+}`;
+		}
 		await reporter.addLog(
 			"structured",
 			`[${fileName}] Calling Llama-3.2-11b-Vision for structured JSON...`,
@@ -634,6 +657,37 @@ export async function processJob(
 				totalStructured += extPhase2.durations.structured || 0;
 			}
 
+			// Fallback Loop for Missing Critical Fields
+			const criticalFields = ["MANUFACTURER", "BRAND", "WEIGHT", "COUNTRY", "PACKAGING_TYPE", "ITEM_NAME"];
+			let currentVision = { ...extPhase2.vision };
+			let missingFields = criticalFields.filter(f => !currentVision[f] || String(currentVision[f]).trim() === "");
+
+			if (missingFields.length > 0 && group.length > 1) {
+				// Query up to 2 other images in the group to find the missing fields
+				const fallbackImages = group.filter(img => img.fileName !== rep.fileName).slice(0, 2);
+				for (const fallbackImg of fallbackImages) {
+					await reporter.addLog("structured", `[${fallbackImg.fileName}] Missing fields [${missingFields.join(", ")}]. Querying fallback image...`, "info");
+					
+					const fallbackExt = await processPhase2(
+						orgId, jobId, fallbackImg.fileName, fallbackImg.imageHash, fallbackImg.buffer, fallbackImg.ocr, fallbackImg.watermarkInfo, reporter, missingFields
+					);
+					
+					if (fallbackExt.durations) {
+						totalStructured += fallbackExt.durations.structured || 0;
+					}
+
+					// Merge found fields
+					for (const f of missingFields) {
+						if (fallbackExt.vision[f] && String(fallbackExt.vision[f]).trim() !== "") {
+							currentVision[f] = fallbackExt.vision[f];
+						}
+					}
+
+					missingFields = criticalFields.filter(f => !currentVision[f] || String(currentVision[f]).trim() === "");
+					if (missingFields.length === 0) break; // Break early if all found
+				}
+			}
+
 			// Distribute results to all images in pre-group
 			for (const img of group) {
 				// We assemble the final raw extraction
@@ -641,7 +695,7 @@ export async function processJob(
 					fileName: img.fileName,
 					zxing: img.zxing || rep.zxing, // Share barcode if missing
 					ocr: img.ocr,
-					vision: extPhase2.vision,      // Shared Structured Data
+					vision: currentVision,      // Shared Structured Data (including fallbacks)
 					productGroupKey: extPhase2.productGroupKey,
 					watermarkInfo: img.watermarkInfo || rep.watermarkInfo
 				};

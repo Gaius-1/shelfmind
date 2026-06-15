@@ -15,7 +15,7 @@ export interface WatermarkData {
 }
 
 // Regex to detect an Audit Visit ID (e.g. GH00041222, NG0123, 00041222, CH000364912)
-const AUDIT_ID_REGEX = /^[A-Z]{0,3}\d{4,}/i;
+const AUDIT_ID_REGEX = /^(?!S\d+_)[A-Z]{0,10}\d{3,}/i;
 
 /**
  * Parses raw watermark text overlay from audit photos.
