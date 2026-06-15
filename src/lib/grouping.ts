@@ -10,7 +10,19 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 	const normalizeStr = (s?: string) => (s ? s.toLowerCase().replace(/[^a-z0-9]/g, "") : "");
 	const productMap = new Map<string, IMDBProduct>();
 
-	for (const entry of rawExtractions) {
+	// Calculate information density to prioritize the best extraction
+	const getDensity = (entry: IMDBProduct) => {
+		let score = 0;
+		Object.entries(entry).forEach(([k, v]) => {
+			if (typeof v === "string" && v.length > 0) score++;
+		});
+		return score;
+	};
+
+	// Sort by highest density first so the clearest image dictates the base record
+	const sortedExtractions = [...rawExtractions].sort((a, b) => getDensity(b) - getDensity(a));
+
+	for (const entry of sortedExtractions) {
 		const tag = normalizeStr(entry.imageTag);
 		const barcode = normalizeStr(entry.BARCODE);
 		const name = normalizeStr(entry.ITEM_NAME);
@@ -32,11 +44,21 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 			productMap.set(groupKey, { ...entry, sourceImages: [...entry.sourceImages] });
 		} else {
 			const existing = productMap.get(groupKey)!;
-			// Aggregation: Fill missing fields from other images in the same group
+			// Aggregation: Keep the most descriptive (longest) string for text fields
 			Object.keys(entry).forEach((key) => {
 				const k = key as keyof IMDBProduct;
-				if (!existing[k] && entry[k]) {
-					(existing[k] as any) = entry[k];
+				if (k === 'sourceImages' || k === 'rawVisionData') return;
+				
+				const existingVal = existing[k];
+				const newVal = entry[k];
+
+				if (typeof newVal === "string") {
+					// Use descriptive length heuristic: longer text usually means fewer dropped characters
+					if (!existingVal || (typeof existingVal === "string" && newVal.length > existingVal.length)) {
+						(existing[k] as any) = newVal;
+					}
+				} else if (!existingVal && newVal) {
+					(existing[k] as any) = newVal;
 				}
 			});
 			existing.sourceImages.push(...entry.sourceImages);
