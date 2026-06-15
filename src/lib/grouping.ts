@@ -57,25 +57,27 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 			const extName = normalizeStr(existing.ITEM_NAME);
 			const extBrand = normalizeStr(existing.BRAND);
 
+			// Helper for Conflict Detection
+			const hasBarcodeConflict = barcode && extBarcode && barcode.length > 8 && extBarcode.length > 8 
+				? levenshtein(barcode, extBarcode) > 2 
+				: (barcode && extBarcode && barcode !== extBarcode);
+				
+			const hasNameConflict = name && extName && name.length > 4 && extName.length > 4
+				? (!extName.includes(name) && !name.includes(extName))
+				: (name && extName && name !== extName);
+
 			// 1. Exact Tag Matching
 			if (tag && tag.length > 3 && extTag === tag) { foundKey = key; break; }
 			
 			// 2. Fuzzy Barcode Matching (Allow 1-2 OCR digit errors for full barcodes)
-			if (barcode && barcode.length > 8 && extBarcode && extBarcode.length > 8) {
-				if (levenshtein(barcode, extBarcode) <= 2) { foundKey = key; break; }
-			} else if (barcode && barcode.length > 4 && extBarcode === barcode) {
-				foundKey = key; break; // Exact match fallback for short barcodes
-			}
+			if (barcode && extBarcode && !hasBarcodeConflict) { foundKey = key; break; }
 
 			// 3. Fuzzy Item Name Matching (Substring matching, e.g. "Mok Soap" inside "Mok Fine Soap")
-			if (name && name.length > 4 && extName && extName.length > 4) {
-				if (extName.includes(name) || name.includes(extName)) { foundKey = key; break; }
-			}
+			if (name && extName && !hasNameConflict) { foundKey = key; break; }
 
-			// 4. BRAND isolation fallback (If both are unreadable but belong to same isolated brand)
-			if (brand && brand.length > 3 && extBrand === brand) {
-				// Only group by brand if they don't have conflicting barcodes/names
-				if (!barcode && !extBarcode && !name && !extName) {
+			// 4. BRAND isolation fallback (Merge back-of-pack images into front-of-pack if no conflicts exist)
+			if (brand && brand.length > 2 && extBrand === brand) {
+				if (!hasBarcodeConflict && !hasNameConflict) {
 					foundKey = key; break;
 				}
 			}
