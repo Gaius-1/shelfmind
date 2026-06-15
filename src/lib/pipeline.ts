@@ -825,8 +825,8 @@ export async function processJob(
 					// Watermark parsed values (0.9 confidence)
 					if (ext.watermarkInfo) {
 						let val: string | null = null;
-						if (col === "ITEM_NAME" && ext.watermarkInfo.productDescription)
-							val = ext.watermarkInfo.productDescription;
+						// We no longer overwrite ITEM_NAME with the watermark description
+						// because the watermark is too noisy and overwrites the clean Vision extraction.
 						if (col === "WEIGHT" && ext.watermarkInfo.weight)
 							val = ext.watermarkInfo.weight;
 						if (col === "PACKAGING_TYPE" && ext.watermarkInfo.packaging)

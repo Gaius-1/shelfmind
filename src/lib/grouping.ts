@@ -138,7 +138,12 @@ export function computeGroupSimilarity<T extends GroupableExtraction>(
 
 	// B. Watermark Audit ID conflict
 	if (aAuditId && bAuditId && aAuditId !== bAuditId) {
-		return 0;
+		const fnA = parseFilename(a.fileName);
+		const fnB = parseFilename(b.fileName);
+		const isSequential = !!(fnA && fnB && fnA.storeId === fnB.storeId && Math.abs(fnA.imageId - fnB.imageId) <= 3);
+		if (!isSequential) {
+			return 0;
+		}
 	}
 
 	// C. Weight Blocker (Crucial constraint)
