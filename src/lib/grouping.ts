@@ -66,8 +66,17 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 				? (!extName.includes(name) && !name.includes(extName))
 				: (name && extName && name !== extName);
 
-			// 1. Exact Tag Matching
-			if (tag && tag.length > 3 && extTag === tag) { foundKey = key; break; }
+			// 1. Fuzzy Tag Matching (Handle "Front" / "Back" edge suffixes by checking for substrings or very low Levenshtein)
+			if (tag && extTag && tag.length > 5 && extTag.length > 5) {
+				// If one string is almost entirely contained in the other (e.g. they share "gh000364912 u-fresh orange 350ml...")
+				if (tag.includes(extTag) || extTag.includes(tag)) {
+					foundKey = key; break;
+				}
+				// Or if they are mathematically very similar
+				if (levenshtein(tag, extTag) <= 4) {
+					foundKey = key; break;
+				}
+			}
 			
 			// 2. Fuzzy Barcode Matching (Allow 1-2 OCR digit errors for full barcodes)
 			if (barcode && extBarcode && !hasBarcodeConflict) { foundKey = key; break; }
