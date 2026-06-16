@@ -72,9 +72,9 @@ const COUNTRY_MAP: Record<string, string> = {
 	japan: "Japan",
 	gh: "Ghana",
 	ghana: "Ghana",
-	ci: "Côte d'Ivoire",
-	"cote d'ivoire": "Côte d'Ivoire",
-	"ivory coast": "Côte d'Ivoire",
+	ci: "Cote d'Ivoire",
+	"cote d'ivoire": "Cote d'Ivoire",
+	"ivory coast": "Cote d'Ivoire",
 	be: "Belgium",
 	belgium: "Belgium",
 	ae: "United Arab Emirates",
@@ -92,13 +92,16 @@ const COUNTRY_MAP: Record<string, string> = {
  */
 export function normalizeCountry(raw: string): string {
 	if (!raw) return "";
-	const clean = raw.trim().toLowerCase();
+	// Strip accents/diacritics and convert to lowercase for matching
+	const clean = raw.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 	if (COUNTRY_MAP[clean]) {
 		return COUNTRY_MAP[clean].toUpperCase();
 	}
-	// UPPERCASE default
+	// UPPERCASE default, stripping accents to match CSV standards
 	return raw
 		.trim()
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
 		.toUpperCase();
 }
 
