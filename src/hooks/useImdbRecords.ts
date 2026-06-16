@@ -17,6 +17,7 @@ export interface ImdbRecordsResponse {
 export function useImdbRecords(orgId: string, jobId: string) {
   return useQuery<ImdbRecordsResponse>({
     queryKey: queryKeys.records(orgId, jobId),
+    enabled: jobId !== 'dummy-no-job',
     queryFn: async () => {
       const res = await fetch(`/api/jobs/${jobId}/records`)
       if (!res.ok) {
