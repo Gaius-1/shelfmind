@@ -34,10 +34,10 @@ export const initialNodes: Node<CustomNodeData>[] = [
 		type: "customNode",
 		position: { x: 350, y: 250 },
 		data: {
-			title: "Google Cloud Vision",
-			description: "Perception: Extracts raw text perfectly.",
+			title: "RolmOCR Transcription",
+			description: "Perception: High-fidelity document text extraction.",
 			iconType: "vision",
-			badge: "ENTERPRISE",
+			badge: "REDUCTO",
 			status: "pending",
 		},
 	},

@@ -33,8 +33,8 @@ export class JobCoordinator extends DurableObject<Env> {
 							...storedNode,
 							data: {
 								...storedNode.data,
-								title: initialNode.data.title,
-								description: initialNode.data.description,
+								title: storedNode.data.title || initialNode.data.title,
+								description: storedNode.data.description || initialNode.data.description,
 								badge: cleanBadge,
 								processedCount: undefined,
 								totalCount: undefined,
@@ -104,6 +104,8 @@ export class JobCoordinator extends DurableObject<Env> {
 		processedCount?: number,
 		totalCount?: number,
 		badge?: string,
+		title?: string,
+		description?: string,
 	) {
 		this.state.nodes = this.state.nodes.map((node) =>
 			node.id === nodeId
@@ -115,6 +117,8 @@ export class JobCoordinator extends DurableObject<Env> {
 							...(processedCount !== undefined ? { processedCount } : {}),
 							...(totalCount !== undefined ? { totalCount } : {}),
 							...(badge !== undefined ? { badge } : {}),
+							...(title !== undefined ? { title } : {}),
+							...(description !== undefined ? { description } : {}),
 						},
 					}
 				: node,
@@ -126,6 +130,8 @@ export class JobCoordinator extends DurableObject<Env> {
 			processedCount,
 			totalCount,
 			badge,
+			title,
+			description,
 		});
 		// Non-blocking persist to DO SQLite
 		this.ctx.waitUntil(this.persist());
