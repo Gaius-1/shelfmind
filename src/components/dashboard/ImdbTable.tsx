@@ -1,55 +1,56 @@
 import * as React from 'react'
 import { useState, useMemo } from 'react'
-import { Link } from '@tanstack/react-router'
 import {
   useReactTable,
   getCoreRowModel,
   getSortedRowModel,
   getPaginationRowModel,
   getFilteredRowModel,
-  flexRender,
   type SortingState,
+  type ColumnDef,
 } from '@tanstack/react-table'
+import type { DragEndEvent } from '@dnd-kit/core'
+import { arrayMove } from '@dnd-kit/sortable'
+
 import { IMDB_COLUMNS, EXCEL_HEADERS, type ImdbColumnName } from '#/types/imdb.ts'
 import { useRecordMutation } from '#/hooks/useRecordMutation.ts'
 import { Spinner } from '#/components/spinner.tsx'
 import {
-  Search,
-  SlidersHorizontal,
-  ChevronDown,
-  ChevronUp,
-  ChevronsLeft,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsRight,
-  Edit3,
+  Eye,
   AlertCircle,
   Check,
-  Eye,
-  Info,
-  Save,
-  CheckCircle,
-  AlertTriangle,
-  Sparkles,
-  FileText,
-  Barcode as BarcodeIcon,
+  Edit3,
 } from 'lucide-react'
 import { cn } from '#/lib/utils.ts'
+
 import {
   Dialog,
   DialogContent,
 } from '#/components/ui/dialog.tsx'
+import { Input } from '#/components/ui/input.tsx'
+import { Button } from '#/components/ui/button.tsx'
+import { Badge } from '#/components/reui/badge.tsx'
 import {
-  Frame,
-  FramePanel,
-  FrameHeader,
-  FrameTitle,
-} from '#/components/reui/frame.tsx'
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from '#/components/ui/avatar.tsx'
+
+import {
+  DataGrid,
+  DataGridContainer,
+} from '#/components/reui/data-grid/data-grid.tsx'
+import { DataGridPagination } from '#/components/reui/data-grid/data-grid-pagination.tsx'
+import { DataGridScrollArea } from '#/components/reui/data-grid/data-grid-scroll-area.tsx'
+import { DataGridTableDnd } from '#/components/reui/data-grid/data-grid-table-dnd.tsx'
+import { DataGridColumnVisibility } from '#/components/reui/data-grid/data-grid-column-visibility.tsx'
+import { RecordDetail } from '#/components/dashboard/RecordDetail.tsx'
+import { useRecord } from '#/hooks/useRecord.ts'
 
 interface ImdbTableProps {
   records: any[]
   orgId: string
-  jobId: string // Used for cache invalidation
+  jobId: string
   showJobFilter?: boolean
 }
 
@@ -69,7 +70,6 @@ function EditableCell({ record, columnName, value, orgId, jobId }: EditableCellP
   const mutation = useRecordMutation({ orgId, jobId, recordId: record.id })
   
   const metadata = record.fieldMetadata?.[columnName]
-  // Fall back to the overall record confidence if field-level metadata is not available
   const confidence = metadata?.confidence ?? record.confidence ?? 0
   const source = metadata?.source ?? 'AI Extraction Pipeline'
 
@@ -97,19 +97,18 @@ function EditableCell({ record, columnName, value, orgId, jobId }: EditableCellP
     }
   }
 
-  // Determine styling based on confidence
   const isConfidenceLow = confidence < 0.5
   const isConfidenceMedium = confidence >= 0.5 && confidence < 0.75
 
   if (isEditing) {
     return (
-      <input
+      <Input
         type="text"
         value={tempValue}
         onChange={(e) => setTempValue(e.target.value)}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
-        className="w-full h-8 px-1.5 py-0.5 text-xs bg-white dark:bg-neutral-900 border border-indigo-500 rounded-md focus:outline-hidden focus:ring-1 focus:ring-indigo-500 font-medium text-neutral-900 dark:text-neutral-50"
+        className="w-full h-8 px-1.5 py-0.5 text-xs bg-white dark:bg-neutral-900 border-indigo-500 rounded-md focus:outline-hidden focus:ring-1 focus:ring-indigo-500 font-medium text-neutral-900 dark:text-neutral-50"
         autoFocus
       />
     )
@@ -122,7 +121,6 @@ function EditableCell({ record, columnName, value, orgId, jobId }: EditableCellP
       title={`Source: ${source} | Confidence: ${(confidence * 100).toFixed(0)}%`}
     >
       <div className="flex items-center gap-1.5 min-w-0 flex-1">
-        {/* Color-coded confidence dot */}
         <span
           className={cn(
             "size-1.5 rounded-full shrink-0",
@@ -151,7 +149,6 @@ function EditableCell({ record, columnName, value, orgId, jobId }: EditableCellP
         )}
       </div>
 
-      {/* Floating badge for metadata on cell hover */}
       <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 opacity-0 group-hover:opacity-100 scale-95 group-hover:scale-100 transition-all duration-200 z-30 bg-neutral-900/95 dark:bg-neutral-950/95 text-white px-2 py-1 rounded-lg text-[9px] shadow-xl flex items-center gap-1.5 whitespace-nowrap">
         <span className="font-semibold">{source}</span>
         <span className="h-2 w-px bg-neutral-700" />
@@ -168,313 +165,33 @@ function EditableCell({ record, columnName, value, orgId, jobId }: EditableCellP
   )
 }
 
-// ─── Record Detail Modal Component ──────────────────────────────────────────
-interface RecordDetailModalProps {
-  record: any
-  orgId: string
-  jobId: string
-  onClose: () => void
-}
-
-function RecordDetailModal({ record, orgId, jobId, onClose }: RecordDetailModalProps) {
-  // Local form state for the 13 fields
-  const [formFields, setFormFields] = useState<Record<string, string>>(() => {
-    const fields: Record<string, string> = {}
-    IMDB_COLUMNS.forEach((col) => {
-      fields[col] = record[col] || ''
-    })
-    return fields
-  })
-
-  // Watch for record changes
-  React.useEffect(() => {
-    const fields: Record<string, string> = {}
-    IMDB_COLUMNS.forEach((col) => {
-      fields[col] = record[col] || ''
-    })
-    setFormFields(fields)
-  }, [record])
-
-  const [activeImageIndex, setActiveImageIndex] = useState(0)
-  const [evidenceTab, setEvidenceTab] = useState<'zxing' | 'ocr' | 'vision'>('vision')
-  const [saveSuccess, setSaveSuccess] = useState(false)
-
-  const mutation = useRecordMutation({ orgId, jobId, recordId: record.id })
-
-  const handleFieldChange = (colName: string, val: string) => {
-    setFormFields((prev) => ({
-      ...prev,
-      [colName]: val,
-    }))
-    setSaveSuccess(false)
+// ─── Record Detail Dialog Component ──────────────────────────────────────────
+function RecordDetailDialogContent({ recordId, orgId, jobId, onClose }: { recordId: string, orgId: string, jobId: string, onClose: () => void }) {
+  const { data: recordData, isPending, error } = useRecord(orgId, recordId)
+  
+  if (isPending) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center flex-col gap-2">
+        <Spinner size="lg" className="text-indigo-600 dark:text-indigo-400" />
+        <p className="text-xs text-neutral-500 font-semibold animate-pulse">Loading audit evidence...</p>
+      </div>
+    )
   }
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSaveSuccess(false)
-    try {
-      await mutation.mutateAsync({ fields: formFields })
-      setSaveSuccess(true)
-      setTimeout(() => setSaveSuccess(false), 3000)
-    } catch (err) {
-      console.error('[RecordDetailModal] Save failed:', err)
-    }
-  }
-
-  const images = record.rawExtraction?.images || []
-  const currentImage = images[activeImageIndex]
-
-  // Construct image retrieval URL
-  const getImageUrl = (fileName: string) => {
-    const key = `${orgId}/${jobId}/${fileName}`
-    return `/api/jobs/files?bucket=PRODUCT_IMAGES&key=${encodeURIComponent(key)}`
-  }
-
-  const getConfidenceColorClass = (score: number) => {
-    if (score < 0.5) return 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/30'
-    if (score < 0.75) return 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/30'
-    return 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/30'
+  if (error || !recordData?.record) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center p-6">
+        <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 text-xs font-semibold flex items-center gap-2">
+          <AlertCircle className="size-4 shrink-0" />
+          Failed to load record details: {error?.message || 'Record not found'}
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="flex flex-col gap-5 w-full text-neutral-900 dark:text-neutral-50">
-      {/* Header Bar inside Dialog */}
-      <div className="flex flex-col gap-1.5 pb-4 border-b border-neutral-200 dark:border-neutral-800">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold truncate max-w-[80%] text-neutral-900 dark:text-neutral-50">
-            {record.ITEM_NAME || 'Unnamed Product'}
-          </h2>
-          {record.flagged && (
-            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-200/40 dark:border-amber-900/30 text-[10px] font-bold shadow-xs">
-              <AlertTriangle className="size-3.5 shrink-0" />
-              Review Required
-            </span>
-          )}
-        </div>
-        <p className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">
-          ID: {record.id.substring(0, 8)} • Group: {record.productGroupKey || 'None'} • Quality: {(record.confidence * 100).toFixed(0)}%
-        </p>
-      </div>
-
-      {/* Main Split Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Left Column: Image Gallery & Extraction Evidence */}
-        <div className="lg:col-span-5 flex flex-col gap-4">
-          <Frame spacing="sm">
-            <FrameHeader>
-              <FrameTitle className="text-xs uppercase tracking-wider text-neutral-400">Source Images ({images.length})</FrameTitle>
-            </FrameHeader>
-
-            <FramePanel className="flex flex-col gap-3">
-              {images.length > 0 ? (
-                <>
-                  <div className="relative aspect-square w-full rounded-xl bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 overflow-hidden flex items-center justify-center shadow-inner">
-                    <img
-                      src={getImageUrl(currentImage.fileName)}
-                      alt="Source Product Image"
-                      className="max-h-full max-w-full object-contain"
-                    />
-                  </div>
-
-                  {/* Thumbnail Selector */}
-                  {images.length > 1 && (
-                    <div className="flex gap-1.5 overflow-x-auto pb-1">
-                      {images.map((img: any, idx: number) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setActiveImageIndex(idx)}
-                          className={cn(
-                            "px-2 py-1 text-[10px] font-bold rounded-lg border transition-all shrink-0",
-                            idx === activeImageIndex
-                              ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                              : "bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800"
-                          )}
-                        >
-                          {img.fileName.split('_').pop() || `Img ${idx + 1}`}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="aspect-square w-full rounded-xl bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 flex items-center justify-center text-xs font-semibold text-neutral-400">
-                  No images available
-                </div>
-              )}
-            </FramePanel>
-          </Frame>
-
-          {/* Evidence panel */}
-          <Frame spacing="xs">
-            <FrameHeader>
-              <FrameTitle className="text-xs uppercase tracking-wider text-neutral-400">Extraction Evidence</FrameTitle>
-            </FrameHeader>
-            <FramePanel className="flex flex-col gap-3">
-              <div className="flex p-0.5 bg-neutral-100 dark:bg-neutral-900 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setEvidenceTab('vision')}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-1 py-1 text-[10px] font-bold rounded-md transition-all",
-                    evidenceTab === 'vision'
-                      ? "bg-white dark:bg-neutral-800 text-indigo-600 dark:text-indigo-400 shadow-xs"
-                      : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-                  )}
-                >
-                  <Sparkles className="size-3" />
-                  Structured
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEvidenceTab('ocr')}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-1 py-1 text-[10px] font-bold rounded-md transition-all",
-                    evidenceTab === 'ocr'
-                      ? "bg-white dark:bg-neutral-800 text-indigo-600 dark:text-indigo-400 shadow-xs"
-                      : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-                  )}
-                >
-                  <FileText className="size-3" />
-                  OCR
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEvidenceTab('zxing')}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-1 py-1 text-[10px] font-bold rounded-md transition-all",
-                    evidenceTab === 'zxing'
-                      ? "bg-white dark:bg-neutral-800 text-indigo-600 dark:text-indigo-400 shadow-xs"
-                      : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-                  )}
-                >
-                  <BarcodeIcon className="size-3" />
-                  ZXing
-                </button>
-              </div>
-
-              <div className="bg-neutral-900 text-neutral-100 rounded-lg p-2.5 text-[10px] font-mono max-h-[140px] overflow-y-auto border border-neutral-800 shadow-inner">
-                {evidenceTab === 'vision' && (
-                  <pre className="whitespace-pre-wrap leading-relaxed">
-                    {currentImage?.vision
-                      ? JSON.stringify(currentImage.vision, null, 2)
-                      : '// No VLM structured extraction available'}
-                  </pre>
-                )}
-                {evidenceTab === 'ocr' && (
-                  <pre className="whitespace-pre-wrap leading-relaxed">
-                    {currentImage?.ocr || '// No OCR text available'}
-                  </pre>
-                )}
-                {evidenceTab === 'zxing' && (
-                  <div className="flex flex-col gap-1 py-0.5 font-semibold text-neutral-300">
-                    <p>WASM Barcode Scanner (ZXing):</p>
-                    <p className="text-white text-xs mt-1">
-                      Detected: {currentImage?.zxing?.barcode ? (
-                        <span className="text-emerald-400 font-bold bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-900/30">
-                          {currentImage.zxing.barcode}
-                        </span>
-                      ) : (
-                        <span className="text-neutral-500 italic">None</span>
-                      )}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </FramePanel>
-          </Frame>
-        </div>
-
-        {/* Right Column: Editable fields */}
-        <div className="lg:col-span-7 flex flex-col gap-4">
-          <form onSubmit={handleSave} className="flex flex-col gap-4">
-            <Frame spacing="sm">
-              <FrameHeader>
-                <FrameTitle className="text-xs uppercase tracking-wider text-neutral-400">Master Data Columns</FrameTitle>
-              </FrameHeader>
-              <FramePanel className="flex flex-col gap-3 max-h-[380px] overflow-y-auto pr-1">
-                {IMDB_COLUMNS.map((colName) => {
-                  const metadata = record.fieldMetadata?.[colName]
-                  const confidence = metadata?.confidence ?? record.confidence ?? 0
-                  const source = metadata?.source ?? 'AI Extraction Pipeline'
-
-                  return (
-                    <div
-                      key={colName}
-                      className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center border-b border-neutral-100 dark:border-neutral-900 pb-2.5 last:border-0 last:pb-0"
-                    >
-                      <div className="sm:col-span-4 flex flex-col gap-0.5">
-                        <label className="text-[10px] font-extrabold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider">
-                          {EXCEL_HEADERS[colName]}
-                        </label>
-                        <div className="flex items-center gap-1">
-                          <span className="text-[8px] font-bold text-neutral-400 dark:text-neutral-500 bg-neutral-100 dark:bg-neutral-800 px-1 py-0.2 rounded">
-                            {source}
-                          </span>
-                          <span className={cn(
-                            "text-[8px] font-extrabold px-1 py-0.2 rounded border",
-                            getConfidenceColorClass(confidence)
-                          )}>
-                            {(confidence * 100).toFixed(0)}%
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="sm:col-span-8">
-                        <input
-                          type="text"
-                          value={formFields[colName]}
-                          onChange={(e) => handleFieldChange(colName, e.target.value)}
-                          className={cn(
-                            "w-full h-8 px-2.5 text-xs bg-white dark:bg-neutral-900 border rounded-lg focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium text-neutral-900 dark:text-neutral-50",
-                            confidence < 0.5 && !mutation.isPending && "border-rose-200 dark:border-rose-900/40 bg-rose-50/10",
-                            confidence >= 0.5 && confidence < 0.75 && !mutation.isPending && "border-amber-200 dark:border-amber-900/40 bg-amber-50/10",
-                            confidence >= 0.75 && !mutation.isPending && "border-neutral-200 dark:border-neutral-800"
-                          )}
-                          placeholder={`Enter ${EXCEL_HEADERS[colName].toLowerCase()}...`}
-                        />
-                      </div>
-                    </div>
-                  )
-                })}
-              </FramePanel>
-            </Frame>
-
-            {/* Actions Footer */}
-            <div className="flex items-center justify-between gap-4 p-3 border border-neutral-200 dark:border-neutral-800 bg-neutral-50/30 dark:bg-neutral-950/20 rounded-2xl">
-              <div className="flex items-center gap-2">
-                {saveSuccess && (
-                  <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 animate-fade-in">
-                    <CheckCircle className="size-4 shrink-0" />
-                    Changes saved successfully
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="h-8 px-3.5 text-xs font-bold text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 rounded-xl transition-colors border border-transparent"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={mutation.isPending}
-                  className="flex items-center gap-1.5 h-8 px-4 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl disabled:opacity-50 transition-colors shadow-xs"
-                >
-                  {mutation.isPending ? (
-                    <Spinner size="xs" className="text-white" />
-                  ) : (
-                    <Save className="size-3.5" />
-                  )}
-                  Save Changes
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </div>
+    <div className="max-h-[85vh] overflow-y-auto overflow-x-hidden pt-4 pb-4 px-2">
+      <RecordDetail record={recordData.record} orgId={orgId} jobId={recordData.record.jobId || jobId} />
     </div>
   )
 }
@@ -483,21 +200,26 @@ function RecordDetailModal({ record, orgId, jobId, onClose }: RecordDetailModalP
 export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
-  const [selectedRecord, setSelectedRecord] = useState<any | null>(null)
-  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
-    // Show important columns by default, hide less critical ones
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
+  
+  const [pagination, setPagination] = useState({
+    pageIndex: 0,
+    pageSize: 10,
+  })
+
+  // Define visibility for columns. We use useMemo to map exactly what should be visible by default.
+  // We'll manage column visibility in table state, but rely on Tailwind for mobile hiding.
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {
+      flagged: true,
+      IMAGE: true,
       ITEM_NAME: true,
       BARCODE: true,
       BRAND: true,
-      MANUFACTURER: true,
       WEIGHT: true,
-      PACKAGING_TYPE: true,
-      COUNTRY: true,
       confidence: true,
       actions: true,
     }
-    // Others default to false (can be toggled)
     IMDB_COLUMNS.forEach((col) => {
       if (initial[col] === undefined) {
         initial[col] = false
@@ -505,11 +227,15 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
     })
     return initial
   })
-  const [isColumnDropdownOpen, setIsColumnDropdownOpen] = useState(false)
 
-  // Define table columns
-  const tableColumns = useMemo(() => {
-    const cols: any[] = []
+  // Construct image retrieval URL
+  const getImageUrl = (fileName: string, recordJobId: string) => {
+    const key = `${orgId}/${recordJobId}/${fileName}`
+    return `/api/jobs/files?bucket=PRODUCT_IMAGES&key=${encodeURIComponent(key)}`
+  }
+
+  const tableColumns = useMemo<ColumnDef<any>[]>(() => {
+    const cols: ColumnDef<any>[] = []
 
     // 1. Flagged Status Column
     cols.push({
@@ -530,11 +256,54 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
           </div>
         )
       },
+      size: 40,
       enableSorting: true,
+      meta: {
+        headerClassName: "w-10",
+        cellClassName: "w-10",
+      }
     })
 
-    // 2. Dynamic 13 IMDB Columns
+    // 2. IMAGE Collage
+    cols.push({
+      id: 'IMAGE',
+      header: 'IMAGE',
+      cell: ({ row }) => {
+        const images = row.original.rawExtraction?.images || []
+        const displayImages = images.slice(0, 3)
+        const remainder = images.length - 3
+        const recordJobId = row.original.jobId || jobId
+
+        return (
+          <div className="flex items-center -space-x-2">
+            {displayImages.map((img: any, i: number) => (
+              <Avatar key={i} className="size-8 border-2 border-background shadow-xs">
+                <AvatarImage src={getImageUrl(img.fileName, recordJobId)} className="object-cover" />
+                <AvatarFallback className="text-[10px] bg-neutral-100 dark:bg-neutral-800">Img</AvatarFallback>
+              </Avatar>
+            ))}
+            {remainder > 0 && (
+              <Avatar className="size-8 border-2 border-background shadow-xs">
+                <AvatarFallback className="text-[10px] font-bold bg-neutral-200 dark:bg-neutral-700">+{remainder}</AvatarFallback>
+              </Avatar>
+            )}
+            {images.length === 0 && (
+              <Avatar className="size-8 border-2 border-background shadow-xs">
+                <AvatarFallback className="text-[10px] bg-neutral-100 dark:bg-neutral-800">-</AvatarFallback>
+              </Avatar>
+            )}
+          </div>
+        )
+      },
+      size: 120,
+      enableSorting: false,
+    })
+
+    // 3. Dynamic 13 IMDB Columns
     IMDB_COLUMNS.forEach((colName) => {
+      // For mobile responsiveness: hide non-critical columns on 'sm' and down
+      const isCritical = colName === 'ITEM_NAME'
+      
       cols.push({
         id: colName,
         header: EXCEL_HEADERS[colName],
@@ -546,15 +315,20 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
               columnName={colName}
               value={getValue() as string}
               orgId={orgId}
-              jobId={jobId}
+              jobId={row.original.jobId || jobId}
             />
           )
         },
+        size: colName === 'ITEM_NAME' ? 250 : 150,
         enableSorting: true,
+        meta: {
+          headerClassName: !isCritical ? "hidden md:table-cell" : "",
+          cellClassName: !isCritical ? "hidden md:table-cell" : "",
+        }
       })
     })
 
-    // 3. Overall Confidence Column
+    // 4. Overall Confidence Column
     cols.push({
       id: 'confidence',
       header: 'CONFIDENCE',
@@ -562,291 +336,154 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
       cell: ({ getValue }: any) => {
         const val = getValue() as number
         const pct = (val * 100).toFixed(0)
+        
+        let variant: "success-light" | "warning-light" | "destructive-light" = "success-light"
+        let barColor = "bg-emerald-500"
+        
+        if (val < 0.5) {
+          variant = "destructive-light"
+          barColor = "bg-rose-500"
+        } else if (val < 0.75) {
+          variant = "warning-light"
+          barColor = "bg-amber-500"
+        }
+
         return (
-          <div className="flex flex-col gap-1 w-20">
-            <div className="flex justify-between text-[10px] font-bold">
-              <span
-                className={cn(
-                  val >= 0.85
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : val >= 0.75
-                      ? 'text-indigo-600 dark:text-indigo-400'
-                      : val >= 0.5
-                        ? 'text-amber-600 dark:text-amber-400'
-                        : 'text-rose-600 dark:text-rose-400'
-                )}
-              >
-                {pct}%
-              </span>
-            </div>
-            <div className="w-full h-1 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+          <div className="flex flex-col gap-1 w-24">
+            <Badge variant={variant} size="xs" className="w-fit">{pct}%</Badge>
+            <div className="w-full h-1 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden mt-1">
               <div
                 style={{ width: `${val * 100}%` }}
-                className={cn(
-                  'h-full rounded-full',
-                  val >= 0.85 && 'bg-emerald-500',
-                  val >= 0.75 && 'bg-indigo-500',
-                  val >= 0.5 && 'bg-amber-500',
-                  val < 0.5 && 'bg-rose-500'
-                )}
+                className={cn('h-full rounded-full', barColor)}
               />
             </div>
           </div>
         )
       },
+      size: 120,
       enableSorting: true,
     })
 
-    // 4. Actions Column
+    // 5. Actions Column
     cols.push({
       id: 'actions',
       header: 'ACTIONS',
       cell: ({ row }: any) => (
-        <div className="flex items-center justify-end">
-          <Link
-            to={`/dashboard/review-queue/${row.original.id}`}
-            className="p-1 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
+        <div className="flex items-center justify-end pr-2">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+            onClick={() => setSelectedRecordId(row.original.id)}
             title="View full evidence audit details"
           >
             <Eye className="size-4" />
-          </Link>
+          </Button>
         </div>
       ),
+      size: 80,
+      enableSorting: false,
     })
 
     return cols
   }, [orgId, jobId])
 
-  // Filter columns based on visibleColumns state
-  const activeColumns = useMemo(() => {
-    return tableColumns.filter((col) => {
-      if (col.id === 'flagged' || col.id === 'actions') return true
-      return visibleColumns[col.id]
-    })
-  }, [tableColumns, visibleColumns])
+  const [columnOrder, setColumnOrder] = useState<string[]>(
+    tableColumns.map((column) => column.id as string)
+  )
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (active && over && active.id !== over.id) {
+      setColumnOrder((columnOrder) => {
+        const oldIndex = columnOrder.indexOf(active.id as string)
+        const newIndex = columnOrder.indexOf(over.id as string)
+        return arrayMove(columnOrder, oldIndex, newIndex)
+      })
+    }
+  }
 
   const table = useReactTable({
+    columns: tableColumns,
     data: records,
-    columns: activeColumns,
+    pageCount: Math.ceil((records?.length || 0) / pagination.pageSize),
+    getRowId: (row: any) => row.id,
     state: {
+      pagination,
       sorting,
+      columnOrder,
+      columnVisibility,
       globalFilter,
     },
+    onColumnOrderChange: setColumnOrder,
+    onPaginationChange: setPagination,
     onSortingChange: setSorting,
+    onColumnVisibilityChange: setColumnVisibility,
     onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
   })
 
   return (
     <div className="flex flex-col gap-4 w-full">
       {/* Search and Column Filter Bar */}
       <div className="flex flex-col sm:flex-row gap-3 justify-between items-stretch sm:items-center">
-        {/* Global Search Input */}
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-neutral-400 pointer-events-none" />
-          <input
+          <Input
             type="text"
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
             placeholder="Search records..."
-            className="w-full h-10 pl-9 pr-4 text-xs bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800/80 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium placeholder-neutral-400 transition-all shadow-xs"
+            className="w-full h-10 bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800/80 rounded-xl"
           />
         </div>
-
-        {/* Columns Dropdown Toggle */}
-        <div className="relative shrink-0">
-          <button
-            type="button"
-            onClick={() => setIsColumnDropdownOpen((v) => !v)}
-            className="flex items-center gap-2 h-10 px-4 text-xs font-bold bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800/80 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors shadow-xs"
-          >
-            <SlidersHorizontal className="size-4 text-neutral-400" />
-            Columns
-            <ChevronDown className={cn("size-3 text-neutral-400 transition-transform", isColumnDropdownOpen && "rotate-180")} />
-          </button>
-
-          {isColumnDropdownOpen && (
-            <>
-              {/* Overlay to close */}
-              <div className="fixed inset-0 z-40" onClick={() => setIsColumnDropdownOpen(false)} />
-              
-              <div className="absolute right-0 top-[calc(100%+6px)] z-50 w-52 bg-white/95 dark:bg-neutral-950/95 backdrop-blur-xl border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-xl p-3 flex flex-col gap-2 max-h-[360px] overflow-y-auto animate-in fade-in-0 duration-100">
-                <p className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest px-1">Toggle Columns</p>
-                <div className="flex flex-col gap-1">
-                  {IMDB_COLUMNS.map((col) => (
-                    <label
-                      key={col}
-                      className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-neutral-100/80 dark:hover:bg-neutral-800/60 cursor-pointer text-xs font-semibold text-neutral-700 dark:text-neutral-300"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={!!visibleColumns[col]}
-                        onChange={(e) => {
-                          setVisibleColumns((prev) => ({
-                            ...prev,
-                            [col]: e.target.checked,
-                          }))
-                        }}
-                        className="rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      {EXCEL_HEADERS[col]}
-                    </label>
-                  ))}
-                  <div className="h-px bg-neutral-100 dark:bg-neutral-800 my-1" />
-                  <label className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-neutral-100/80 dark:hover:bg-neutral-800/60 cursor-pointer text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                    <input
-                      type="checkbox"
-                      checked={!!visibleColumns.confidence}
-                      onChange={(e) => {
-                        setVisibleColumns((prev) => ({
-                          ...prev,
-                          confidence: e.target.checked,
-                        }))
-                      }}
-                      className="rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                    CONFIDENCE SCORE
-                  </label>
-                </div>
-              </div>
-            </>
-          )}
+        
+        <div className="flex items-center gap-2">
+          <DataGridColumnVisibility
+            table={table}
+            trigger={
+              <Button variant="outline" className="h-10 rounded-xl shadow-xs">
+                Columns
+              </Button>
+            }
+          />
         </div>
       </div>
 
-      {/* Table Area */}
-      <div className="w-full border border-neutral-200 dark:border-neutral-800/80 rounded-2xl bg-white/40 dark:bg-neutral-900/10 backdrop-blur-xl overflow-hidden shadow-xs">
-        <div className="w-full overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              {table.getHeaderGroups().map((headerGroup) => (
-                <tr
-                  key={headerGroup.id}
-                  className="border-b border-neutral-200 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/40"
-                >
-                  {headerGroup.headers.map((header) => {
-                    const canSort = header.column.getCanSort()
-                    const sortDir = header.column.getIsSorted()
-
-                    return (
-                      <th
-                        key={header.id}
-                        onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                        className={cn(
-                          "px-4 py-3 text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest select-none",
-                          canSort && "cursor-pointer hover:text-neutral-700 dark:hover:text-neutral-300"
-                        )}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                          {canSort && sortDir === 'asc' && <ChevronUp className="size-3 shrink-0" />}
-                          {canSort && sortDir === 'desc' && <ChevronDown className="size-3 shrink-0" />}
-                        </div>
-                      </th>
-                    )
-                  })}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={activeColumns.length + 1}
-                    className="px-4 py-12 text-center text-xs font-semibold text-neutral-400 dark:text-neutral-500"
-                  >
-                    No records found
-                  </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-b border-neutral-100 dark:border-neutral-800/20 hover:bg-white/50 dark:hover:bg-neutral-900/30 transition-colors last:border-0 cursor-pointer"
-                    onClick={(e) => {
-                      const target = e.target as HTMLElement;
-                      if (
-                        target.closest('input') ||
-                        target.closest('button') ||
-                        target.closest('a') ||
-                        target.closest('svg') ||
-                        target.closest('span.size-1.5') ||
-                        target.closest('.pointer-events-none')
-                      ) {
-                        return;
-                      }
-                      setSelectedRecord(row.original);
-                    }}
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-4 py-2 border-neutral-100 dark:border-neutral-800/20">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      <DataGrid
+        table={table}
+        recordCount={records?.length || 0}
+        tableLayout={{
+          columnsDraggable: true,
+          columnsResizable: true,
+          headerSticky: true,
+        }}
+      >
+        <div className="w-full space-y-2.5">
+          <DataGridContainer>
+            <DataGridScrollArea>
+              <DataGridTableDnd handleDragEnd={handleDragEnd} />
+            </DataGridScrollArea>
+          </DataGridContainer>
+          <DataGridPagination />
         </div>
+      </DataGrid>
 
-        {/* Pagination Controls */}
-        {table.getPageCount() > 1 && (
-          <div className="px-4 py-3.5 border-t border-neutral-200/50 dark:border-neutral-800/40 bg-neutral-50/20 dark:bg-neutral-900/20 flex flex-col sm:flex-row justify-between items-center gap-3">
-            <div className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
-              Showing page <span className="font-bold text-neutral-800 dark:text-neutral-200">{table.getState().pagination.pageIndex + 1}</span> of{' '}
-              <span className="font-bold text-neutral-800 dark:text-neutral-200">{table.getPageCount()}</span> ({records.length} records)
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => table.setPageIndex(0)}
-                disabled={!table.getCanPreviousPage()}
-                className="p-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800/80 bg-white dark:bg-neutral-900 text-neutral-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors shadow-xs"
-              >
-                <ChevronsLeft className="size-3.5" />
-              </button>
-              <button
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-                className="p-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800/80 bg-white dark:bg-neutral-900 text-neutral-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors shadow-xs"
-              >
-                <ChevronLeft className="size-3.5" />
-              </button>
-              <button
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-                className="p-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800/80 bg-white dark:bg-neutral-900 text-neutral-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors shadow-xs"
-              >
-                <ChevronRight className="size-3.5" />
-              </button>
-              <button
-                onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                disabled={!table.getCanNextPage()}
-                className="p-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800/80 bg-white dark:bg-neutral-900 text-neutral-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors shadow-xs"
-              >
-                <ChevronsRight className="size-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {selectedRecord && (
-        <Dialog open={!!selectedRecord} onOpenChange={(open) => !open && setSelectedRecord(null)}>
-          <DialogContent className="sm:max-w-2xl md:max-w-4xl lg:max-w-5xl w-full max-h-[90vh] overflow-y-auto p-6 bg-card dark:bg-neutral-950 rounded-2xl border border-neutral-200 dark:border-neutral-800 shadow-2xl">
-            <RecordDetailModal
-              record={selectedRecord}
-              orgId={orgId}
-              jobId={jobId}
-              onClose={() => setSelectedRecord(null)}
+      {/* Record Detail Dialog */}
+      <Dialog open={!!selectedRecordId} onOpenChange={(open) => !open && setSelectedRecordId(null)}>
+        <DialogContent className="max-w-[95vw] sm:max-w-5xl p-0 overflow-hidden bg-neutral-50/50 dark:bg-neutral-950/50">
+          {selectedRecordId && (
+            <RecordDetailDialogContent 
+              recordId={selectedRecordId} 
+              orgId={orgId} 
+              jobId={jobId} 
+              onClose={() => setSelectedRecordId(null)} 
             />
-          </DialogContent>
-        </Dialog>
-      )}
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
