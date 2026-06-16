@@ -200,11 +200,6 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
   const [globalFilter, setGlobalFilter] = useState('')
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
   
-  const [pagination, setPagination] = useState({
-    pageIndex: 0,
-    pageSize: 10,
-  })
-
   // Define visibility for columns. We use useMemo to map exactly what should be visible by default.
   // We'll manage column visibility in table state, but rely on Tailwind for mobile hiding.
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
@@ -393,13 +388,17 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
     data: records,
     getRowId: (row: any) => row.id,
     autoResetPageIndex: false,
+    initialState: {
+      pagination: {
+        pageIndex: 0,
+        pageSize: 10,
+      },
+    },
     state: {
-      pagination,
       sorting,
       columnVisibility,
       globalFilter,
     },
-    onPaginationChange: setPagination,
     onSortingChange: setSorting,
     onColumnVisibilityChange: setColumnVisibility,
     onGlobalFilterChange: setGlobalFilter,
