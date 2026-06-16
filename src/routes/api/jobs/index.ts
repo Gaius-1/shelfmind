@@ -2,9 +2,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { db } from '#/db/index.ts'
 import { jobs } from '#/db/schema.ts'
 import * as schema from '#/db/schema.ts'
-import { eq } from 'drizzle-orm'
-import { saveUpload } from '#/lib/storage.ts'
-import { dispatchJob } from '#/lib/queue.ts'
+import { eq, lt, and } from 'drizzle-orm'
+import { deleteUploads } from '#/lib/storage.ts'
 
 const routeOptions: any = {
   server: {
@@ -92,41 +91,46 @@ const routeOptions: any = {
             })
           }
 
-          // 3. Parse files from multipart form-data
-          const formData = await request.formData()
-          const files = formData.getAll('files') as File[]
+          // 3. Lazy Garbage Collector: Clean up orphaned jobs > 24 hours old
+          const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+          const orphanedJobs = await db.select()
+            .from(jobs)
+            .where(
+              and(
+                eq(jobs.status, 'UPLOADING'),
+                lt(jobs.createdAt, twentyFourHoursAgo)
+              )
+            )
 
-          if (!files || files.length === 0) {
-            return new Response(JSON.stringify({ error: 'No files uploaded' }), {
+          for (const orphan of orphanedJobs) {
+            await deleteUploads(orphan.organisationId, orphan.id)
+            await db.delete(jobs).where(eq(jobs.id, orphan.id))
+            console.log(`[GC] Deleted orphaned job ${orphan.id}`)
+          }
+
+          // 4. Parse request for total image count
+          const body = await request.json().catch(() => ({}))
+          const imageCount = body.imageCount || 0
+
+          if (imageCount <= 0 || imageCount > 200) {
+            return new Response(JSON.stringify({ error: 'Invalid image count' }), {
               status: 400,
               headers: { 'Content-Type': 'application/json' }
             })
           }
 
           const jobId = crypto.randomUUID()
-          const imageKeys: string[] = []
 
-          // 4. Save uploaded images
-          for (let i = 0; i < files.length; i++) {
-            const file = files[i]
-            const name = file.name || `image_${i}`
-            const buffer = await file.arrayBuffer()
-            const key = await saveUpload(orgId, jobId, name, buffer)
-            imageKeys.push(key)
-          }
-
-          // 5. Create job in database
+          // 5. Create job in database with UPLOADING status
           await db.insert(jobs).values({
             id: jobId,
             organisationId: orgId,
             createdBy: session.user.id,
-            status: 'PENDING',
+            status: 'UPLOADING',
             progress: 0,
-            imageCount: files.length,
+            imageCount: imageCount,
+            createdAt: new Date(),
           })
-
-          // 6. Dispatch processing job to queue/background
-          await dispatchJob(jobId, orgId, imageKeys)
 
           return new Response(JSON.stringify({ success: true, jobId }), {
             status: 200,
@@ -134,7 +138,7 @@ const routeOptions: any = {
           })
 
         } catch (err: any) {
-          console.error('[API] Upload route failed:', err)
+          console.error('[API] Job creation failed:', err)
           return new Response(JSON.stringify({ error: err?.message || String(err) }), {
             status: 500,
             headers: { 'Content-Type': 'application/json' }

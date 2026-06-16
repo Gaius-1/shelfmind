@@ -10,8 +10,8 @@ import { Alert, AlertDescription, AlertTitle } from '#/components/reui/alert.tsx
 import { Spinner } from '#/components/spinner.tsx'
 import { cn } from '#/lib/utils.ts'
 
-const MAX_FILES = 50
-const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+const MAX_FILES = 200
+const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
 const ALLOWED_TYPES = 'image/jpeg, image/png, image/webp'
 
 export function UploadForm() {
@@ -38,40 +38,73 @@ export function UploadForm() {
     multiple: true,
   })
 
+  const [uploadProgress, setUploadProgress] = useState(0)
+
   const submitBatch = async () => {
     if (files.length === 0 || isSubmitting) return
 
     setIsSubmitting(true)
     setSubmitError(null)
-
-    const formData = new FormData()
-    for (const item of files) {
-      if (item.file instanceof File) {
-        formData.append('files', item.file)
-      }
-    }
+    setUploadProgress(0)
 
     try {
-      const response = await fetch('/api/jobs/', {
+      // 1. Create the job first
+      const createRes = await fetch('/api/jobs/', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageCount: files.length }),
       })
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-        throw new Error(data.error || 'Upload failed')
+      if (!createRes.ok) {
+        const data = await createRes.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to initialize job')
       }
 
-      const result = await response.json()
-      if (result.success && result.jobId) {
-        navigate({ to: '/dashboard/processing-queue' })
-      } else {
-        throw new Error('Server returned unsuccessful upload response.')
+      const { jobId } = await createRes.json()
+
+      // 2. Upload files in chunks of 5
+      const CHUNK_SIZE = 5
+      const totalChunks = Math.ceil(files.length / CHUNK_SIZE)
+
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = files.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE)
+        const formData = new FormData()
+        
+        for (const item of chunk) {
+          if (item.file instanceof File) {
+            formData.append('files', item.file)
+          }
+        }
+
+        const uploadRes = await fetch(`/api/jobs/${jobId}/upload`, {
+          method: 'POST',
+          body: formData,
+        })
+
+        if (!uploadRes.ok) {
+          const data = await uploadRes.json().catch(() => ({}))
+          throw new Error(data.error || `Failed to upload chunk ${i + 1}`)
+        }
+        
+        setUploadProgress(Math.round(((i + 1) / totalChunks) * 100))
       }
+
+      // 3. Start the pipeline
+      const startRes = await fetch(`/api/jobs/${jobId}/start`, {
+        method: 'POST',
+      })
+
+      if (!startRes.ok) {
+        const data = await startRes.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to start extraction pipeline')
+      }
+
+      navigate({ to: '/dashboard/processing-queue' })
     } catch (err: any) {
       console.error('[UploadForm] Submit failed:', err)
       setSubmitError(err?.message || 'Upload failed')
       setIsSubmitting(false)
+      setUploadProgress(0)
     }
   }
 
@@ -200,7 +233,9 @@ export function UploadForm() {
                 {isSubmitting ? (
                   <>
                     <Spinner size="sm" className="mr-2 border-primary-foreground border-t-transparent" />
-                    Uploading & Ingesting ({files.length})...
+                    {uploadProgress < 100 
+                      ? `Uploading... ${uploadProgress}%` 
+                      : `Starting pipeline...`}
                   </>
                 ) : (
                   <>

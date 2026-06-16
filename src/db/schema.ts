@@ -103,6 +103,7 @@ export const jobs = sqliteTable('jobs', {
   status: text('status').default('PENDING'), // PENDING | PROCESSING | COMPLETED | FAILED
   progress: integer('progress').default(0), // 0–100
   imageCount: integer('image_count').default(0),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   startedAt: text('started_at'),
   completedAt: text('completed_at'),
   error: text('error'),

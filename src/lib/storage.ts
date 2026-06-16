@@ -76,6 +76,28 @@ export async function listUploads(orgId: string, jobId: string): Promise<string[
 }
 
 /**
+ * Deletes all uploaded product image keys for a job (Garbage Collection).
+ */
+export async function deleteUploads(orgId: string, jobId: string): Promise<void> {
+  const keys = await listUploads(orgId, jobId)
+  if (keys.length === 0) return
+
+  const binding = getR2Binding('PRODUCT_IMAGES')
+  if (binding) {
+    await binding.delete(keys)
+    return
+  }
+
+  // Local fallback
+  const { unlink } = await import('fs/promises')
+  for (const key of keys) {
+    const filePath = join(MOCK_DIR, key)
+    if (existsSync(filePath)) {
+      await unlink(filePath)
+    }
+  }
+}
+/**
  * Saves a generated export file.
  */
 export async function saveExport(
