@@ -7,8 +7,14 @@ export function normalizeWeight(rawWeight: string): string {
 	if (!rawWeight) return "";
 	const match = rawWeight.match(/(\d+(?:\.\d+)?)\s*(G|KG|ML|L)/i);
 	if (!match) return rawWeight.toUpperCase().trim();
-	const [_, value, unit] = match;
-	return `${value}${unit.toUpperCase()}`;
+	let [_, value, unit] = match;
+	unit = unit.toUpperCase();
+
+	if (value === "1000" && unit === "ML") { value = "1"; unit = "L"; }
+	else if (value === "1000" && unit === "G") { value = "1"; unit = "KG"; }
+	else if (value === "2200" && unit === "G") { value = "2.2"; unit = "KG"; }
+
+	return `${value}${unit}`;
 }
 
 export function normalizeBarcode(rawBarcode: string): string {
@@ -19,25 +25,34 @@ export function normalizeBarcode(rawBarcode: string): string {
 /**
  * Canonicalizes packaging types to standard labels.
  */
-export function normalizePackaging(raw: string): string {
+export function normalizePackaging(raw: string, brand?: string): string {
 	if (!raw) return "";
 	const clean = raw.trim().toLowerCase();
+	const brandClean = brand ? brand.trim().toLowerCase() : "";
+
+	if (brandClean === "kivo" && (clean.includes("pouch") || clean.includes("sachet") || clean.includes("pack"))) {
+		return "POUCH";
+	}
+
 	if (
 		clean.includes("bottle") ||
 		clean.includes("hdpe") ||
 		clean.includes("pet")
 	)
 		return "PLASTIC BOTTLE";
-	if (clean.includes("can") || clean.includes("tin")) return "CAN";
+	if (clean.includes("tin")) return "TIN";
+	if (clean.includes("can")) return "CAN";
 	if (clean.includes("box") || clean.includes("carton")) return "BOX";
-	if (clean.includes("pack") || clean.includes("packet")) return "PACK";
-	if (clean.includes("jar") || clean.includes("glass")) return "GLASS JAR";
-	if (clean.includes("pouch") || clean.includes("sachet")) return "SACHET";
+	if (clean.includes("glass") || clean.includes("jar")) return "GLASS JAR";
+	if (clean.includes("pouch")) return "POUCH";
+	if (clean.includes("sachet")) return "SACHET";
 	if (clean.includes("tube")) return "TUBE";
 	if (clean.includes("tub")) return "TUB";
-	if (clean.includes("bag")) return "BAG";
+	if (clean.includes("plastic bag")) return "PLASTIC BAG";
+	if (clean.includes("bag")) return "PLASTIC BAG";
 	if (clean.includes("wrapper") || clean.includes("wrap")) return "WRAPPER";
 	if (clean.includes("tetra")) return "TETRA PAK";
+	if (clean.includes("pack") || clean.includes("packet")) return "PACK";
 
 	// Default to uppercase
 	return raw.trim().toUpperCase();
@@ -70,6 +85,10 @@ const COUNTRY_MAP: Record<string, string> = {
 	"people's republic of china": "China",
 	jp: "Japan",
 	japan: "Japan",
+	id: "Indonesia",
+	indonesia: "Indonesia",
+	lk: "Sri Lanka",
+	"sri lanka": "Sri Lanka",
 	gh: "Ghana",
 	ghana: "Ghana",
 	ci: "Cote d'Ivoire",
@@ -103,6 +122,71 @@ export function normalizeCountry(raw: string): string {
 		.normalize("NFD")
 		.replace(/[\u0300-\u036f]/g, "")
 		.toUpperCase();
+}
+
+const MANUFACTURER_MAP: Record<string, string> = {
+	"upfield ghana ltd": "UPFIELD",
+	"upfield ghana manufacturing limited": "UPFIELD",
+	"ajc ghana": "AJC TRADING CO LTD",
+	"al-ain national juice & refreshment co.": "AL AIN COMPANY LTD",
+	"coca cola company ltd.": "THE COCA COLA COMPANY",
+	"hema global beverages": "THE COCA COLA COMPANY",
+	"nestle nigeria ltd": "NESTLE",
+	"nestle ghana ltd": "NESTLE",
+	"fagip ventures": "FAGIP VENTURES",
+	"nutrifoods ghana limited": "NUTRIFOODS",
+	"sister sardine & mackerel": "SISTER SARDINE & MACKEREL VENTURES",
+	"xiaman oasis food company ltd": "SISTER SARDINE & MACKEREL VENTURES",
+	"china": "GEE TRADING SAL",
+	"d- u fresh co.ltd": "U-FRESH ENTERPRISES",
+	"u fresh co ltd.": "U-FRESH ENTERPRISES",
+	"aqfrsh": "AQUAFRESH LIMITED",
+	"nat vet phat food co. limited vietnam": "NAM VIET PHAT FOOD CO. LIMITED",
+	"b-diet ltd tamale": "B-DIET LTD",
+	"diakite ramta commercante": "SENICO",
+	"cote d'ivoire": "C'PROPRE",
+	"sunda purecare ltd company": "HOMEPRO COMPANY LTD",
+	"meiji ghana ltd.": "LGD LIMITED",
+	"sdtm": "S.D.T.M",
+	"africa consumer products ghana ltd": "AFRICAN CONSUMER PRODUCTS",
+	"atona foods": "ATONA FOODS",
+	"promasidor ghana ltd": "PROMASIDOR",
+	"blow- chem industries limited": "BLOW CHEM INDUSTRIES LTD",
+	"blow chem industries ltd": "BLOW CHEM INDUSTRIES LTD",
+	"jayaf": "MADHU JAYANTI INTERNATIONAL PVT LTD",
+	"jayaf ltd": "MADHU JAYANTI INTERNATIONAL PVT LTD",
+	"sunshine tea ltd sri lanka": "WATAWALA TEA CEYLON LTD",
+	"etkaf india": "ETKAF",
+	"green field fzc prc": "PROCUS LIMITED",
+	"gb foods ghana ltd": "GB FOODS",
+	"gb food ghana": "GB FOODS",
+	"gb foods ghana": "GB FOODS",
+	"zhejiang native produce & animal co.ltd china": "ZHEJIANG NATIVE PRODUCE & ANIMAL CO LTD",
+	"synergy entreprises ( fze) china": "SYNERGY ENTREPRISES ( FZE)"
+};
+
+export function normalizeManufacturer(raw: string): string {
+	if (!raw) return "";
+	const clean = raw.trim().toLowerCase();
+	if (MANUFACTURER_MAP[clean]) return MANUFACTURER_MAP[clean];
+	
+	if (clean.includes("upfield")) return "UPFIELD";
+	if (clean.includes("nestle")) return "NESTLE";
+	if (clean.includes("coca cola")) return "THE COCA COLA COMPANY";
+	if (clean.includes("unilever")) return "UNILEVER";
+	if (clean.includes("gb food")) return "GB FOODS";
+	if (clean.includes("promasidor")) return "PROMASIDOR";
+	
+	return raw.trim().toUpperCase();
+}
+
+export function normalizeBrand(raw: string): string {
+	if (!raw) return "";
+	const clean = raw.trim().toUpperCase();
+	if (clean === "BEL-COLA" || clean === "BEL MALT") return "BEL";
+	if (clean === "U FRESH" || clean === "U FRESH CO") return "U-FRESH";
+	if (clean === "EAZZY") return "EASY";
+	return clean;
 }
 
 /** Regex matching common accented characters found in non-English (e.g. French) text. */
@@ -191,6 +275,10 @@ export function normalizeField(
 			return normalizeCountry(clean);
 		case "BARCODE":
 			return normalizeBarcode(clean);
+		case "MANUFACTURER":
+			return normalizeManufacturer(clean);
+		case "BRAND":
+			return normalizeBrand(clean);
 		default:
 			return clean;
 	}
@@ -222,7 +310,11 @@ export function normalizeRecord(
 	];
 
 	for (const col of columns) {
-		result[col] = normalizeField(col, record[col]);
+		if (col === "PACKAGING_TYPE") {
+			result[col] = normalizePackaging(record[col] || "", record["BRAND"]);
+		} else {
+			result[col] = normalizeField(col, record[col]);
+		}
 	}
 
 	return result;

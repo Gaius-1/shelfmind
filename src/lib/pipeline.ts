@@ -5,7 +5,8 @@ import pLimit from "p-limit";
 import type { IMDBProduct } from "../types/imdb.ts";
 import { getUpload } from "./storage.ts";
 import { groupAndMergeImages } from "./grouping.ts";
-import { normalizeBarcode, normalizeWeight, normalizePackaging, normalizeCountry, normalizeField } from "./normalization.ts";
+import { normalizeBarcode, normalizeWeight, normalizePackaging, normalizeCountry, normalizeField, normalizeManufacturer, normalizeBrand } from "./normalization.ts";
+import { parseWatermark } from "./watermark-parser.ts";
 
 export class JobReporter {
 	private stub: any = null;
@@ -21,10 +22,10 @@ export class JobReporter {
 		}
 	}
 
-	async updateNodeState(nodeId: string, status: string, processedCount?: number, totalCount?: number, badge?: string) {
+	async updateNodeState(nodeId: string, status: string, processedCount?: number, totalCount?: number, badge?: string, title?: string, description?: string) {
 		if (!this.stub) return;
 		try {
-			await this.stub.updateNodeState(nodeId, status as any, processedCount, totalCount, badge);
+			await this.stub.updateNodeState(nodeId, status as any, processedCount, totalCount, badge, title, description);
 		} catch (e) {}
 	}
 
@@ -41,6 +42,93 @@ export class JobReporter {
 			await this.stub.addLog(nodeId, message, logType);
 		} catch (e) {}
 	}
+}
+
+export function getOcrProvider(env: any = null): {
+    provider: "rolmocr" | "google" | "none";
+    apiKey?: string;
+    endpoint?: string;
+    model?: string;
+} {
+    // 1. Check for Fireworks API key
+    const fireworksKey = env?.FIREWORKS_API_KEY || (typeof process !== "undefined" ? process.env.FIREWORKS_API_KEY : undefined);
+    if (fireworksKey) {
+        return {
+            provider: "rolmocr",
+            apiKey: fireworksKey,
+            endpoint: env?.ROLMOCR_API_ENDPOINT || env?.REDUCTO_API_ENDPOINT || (typeof process !== "undefined" ? (process.env.ROLMOCR_API_ENDPOINT || process.env.REDUCTO_API_ENDPOINT) : undefined) || "https://api.fireworks.ai/inference/v1/chat/completions",
+            model: env?.ROLMOCR_MODEL || env?.REDUCTO_MODEL || (typeof process !== "undefined" ? (process.env.ROLMOCR_MODEL || process.env.REDUCTO_MODEL) : undefined) || "accounts/fireworks/models/rolm-ocr"
+        };
+    }
+
+    // 2. Check for general RolmOCR / Reducto env vars
+    const rolmocrKey = env?.ROLMOCR_API_KEY || env?.REDUCTO_API_KEY || (typeof process !== "undefined" ? (process.env.ROLMOCR_API_KEY || process.env.REDUCTO_API_KEY) : undefined);
+    const rolmocrEndpoint = env?.ROLMOCR_API_ENDPOINT || env?.REDUCTO_API_ENDPOINT || (typeof process !== "undefined" ? (process.env.ROLMOCR_API_ENDPOINT || process.env.REDUCTO_API_ENDPOINT) : undefined);
+    const rolmocrModel = env?.ROLMOCR_MODEL || env?.REDUCTO_MODEL || (typeof process !== "undefined" ? (process.env.ROLMOCR_MODEL || process.env.REDUCTO_MODEL) : undefined);
+
+    if (rolmocrKey || rolmocrEndpoint) {
+        return {
+            provider: "rolmocr",
+            apiKey: rolmocrKey,
+            endpoint: rolmocrEndpoint || "http://localhost:8000/v1/chat/completions",
+            model: rolmocrModel || "reducto/RolmOCR-7b"
+        };
+    }
+
+    // 3. Fallback to Google Vision
+    const googleKey = env?.GOOGLE_VISION_API_KEY || (typeof process !== "undefined" ? process.env.GOOGLE_VISION_API_KEY : undefined);
+    if (googleKey) {
+        return {
+            provider: "google",
+            apiKey: googleKey
+        };
+    }
+
+    return { provider: "none" };
+}
+
+async function extractWithRolmOCR(base64Image: string, env: any = null, reporter: any = null, fileName: string = ""): Promise<string> {
+    const config = getOcrProvider(env);
+    if (config.provider !== "rolmocr" || !config.endpoint) {
+        if (reporter) await reporter.addLog("ocr", `[${fileName}] RolmOCR not properly configured. Skipping.`, "warning");
+        return "";
+    }
+
+    try {
+        const response = await fetch(config.endpoint, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...(config.apiKey ? { "Authorization": `Bearer ${config.apiKey}` } : {})
+            },
+            body: JSON.stringify({
+                model: config.model,
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: "Extract all text from this document." },
+                            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
+                        ]
+                    }
+                ]
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("[RolmOCR] API error:", errorText);
+            if (reporter) await reporter.addLog("ocr", `[${fileName}] RolmOCR API error: ${errorText.substring(0, 100)}. Falling back to Qwen-only.`, "error");
+            return "";
+        }
+
+        const data = await response.json();
+        return data.choices?.[0]?.message?.content || "";
+    } catch (e: any) {
+        console.error("[RolmOCR] Request failed:", e);
+        if (reporter) await reporter.addLog("ocr", `[${fileName}] RolmOCR request failed. Falling back to Qwen-only.`, "error");
+        return "";
+    }
 }
 
 async function extractWithGoogleVision(base64Image: string, env: any = null, reporter: any = null, fileName: string = ""): Promise<string> {
@@ -93,11 +181,27 @@ async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrTe
 
     const prompt = `You are a precise product data extraction assistant. Extract product details as a JSON object with EXACTLY these fields:
 ITEM_NAME, BARCODE, MANUFACTURER, BRAND, WEIGHT, PACKAGING_TYPE, COUNTRY, VARIANT, TYPE, FRAGRANCE_FLAVOR, PROMOTION, ADDONS, TAGLINE, imageTag.
-ALSO, output a nested object named "fieldConfidence" containing a float (0.0 to 1.0) representing your mathematical certainty for each extracted field (e.g., {"ITEM_NAME": 0.95, "WEIGHT": 0.4}).
-Note 1 (CRITICAL): imageTag MUST be the unique serial tag printed on the edge/margin of the photo (e.g., "GH000364912 U-FRESH ORANGE 350ML..."). Extract the ENTIRE identifying string found on the margin, but EXCLUDE words like "Front", "Back", "Left", or "Right". This is our primary grouping key.
-Note 2: For COUNTRY, look closely for phrases like "Made in [Country]", "Produced in [Country]", or "Product of [Country]".
-Note 3: If text is blurry, illegible, or not explicitly printed on the package, you MUST output an empty string "". DO NOT guess, infer, or hallucinate missing values.
-Note 4 (CRITICAL): Here is the exact raw text extracted from this image by an enterprise OCR engine:
+ALSO, output a nested object named "fieldConfidence" containing a float (0.0 to 1.0) representing your mathematical certainty for each extracted field.
+Note 1 (CRITICAL): imageTag MUST be the unique serial tag printed on the edge/margin of the photo (e.g., "GH000364912 U-FRESH ORANGE 350ML..."). Extract the ENTIRE string, but EXCLUDE words like "Front", "Back", "Left", or "Right".
+Note 2: For COUNTRY, look closely for phrases like "Made in [Country]".
+Note 3: If text is blurry or not explicitly printed, output an empty string "". DO NOT guess.
+Note 4 (CRITICAL): Use the exact raw OCR text below for spelling.
+
+--- FEW-SHOT EXAMPLES ---
+Example 1:
+OCR Text: "BLUE BAND 250G PLASTIC TUB SPREAD FOR BREAD MARAGARINE SALTED UPFIELD GHANA MANUFACTURING LIMITED"
+JSON: {"ITEM_NAME": "BLUE BAND 250G PLASTIC TUB SPREAD FOR BREAD MARAGARINE SALTED", "BARCODE": "6034000482027", "MANUFACTURER": "UPFIELD", "BRAND": "BLUE BAND", "WEIGHT": "250G", "PACKAGING_TYPE": "TUB", "COUNTRY": "GHANA", "VARIANT": "ORIGINAL", "TYPE": "SALTED MARGARINE", "FRAGRANCE_FLAVOR": "", "PROMOTION": "", "ADDONS": "", "TAGLINE": "LOW FAT SPREAD FOR BREAD"}
+
+Example 2:
+OCR Text: "LELE MAYONNAISE 430G GLASS TUB BOTTLE MAYONNAISE AJC GHANA"
+JSON: {"ITEM_NAME": "LELE MAYONNAISE 430G GLASS TUB BOTTLE MAYONNAISE", "BARCODE": "106060069411", "MANUFACTURER": "AJC TRADING CO LTD", "BRAND": "LELE", "WEIGHT": "430G", "PACKAGING_TYPE": "GLASS JAR", "COUNTRY": "GHANA", "VARIANT": "", "TYPE": "MAYONNAISE", "FRAGRANCE_FLAVOR": "", "PROMOTION": "", "ADDONS": "", "TAGLINE": ""}
+
+Example 3:
+OCR Text: "MAGGI JOLLOF SEASONING PWDR 8G SACHET NESTLE NIGERIA LTD"
+JSON: {"ITEM_NAME": "MAGGI JOLLOF SEASONING PWDR 8G SACHET", "BARCODE": "6151100033369", "MANUFACTURER": "NESTLE", "BRAND": "MAGGI", "WEIGHT": "8G", "PACKAGING_TYPE": "SACHET", "COUNTRY": "NIGERIA", "VARIANT": "", "TYPE": "POWDER", "FRAGRANCE_FLAVOR": "JOLLOF", "PROMOTION": "", "ADDONS": "", "TAGLINE": ""}
+-------------------------
+
+Here is the exact raw text extracted from this image by an enterprise OCR engine:
 ---
 ${ocrText || "No OCR text provided."}
 ---
@@ -188,8 +292,23 @@ export async function processJob(
         const rawExtractions: IMDBProduct[] = [];
         const limit = pLimit(5); // 5 concurrent requests to avoid rate limits
 
-        await reporter.addLog("ocr", `Running enterprise OCR via Google Cloud Vision...`, "info");
-        await reporter.updateNodeState("ocr", "active");
+        const ocrConfig = getOcrProvider(env);
+        let ocrTitle = "No OCR Provider";
+        let ocrDesc = "Perception: Skipping OCR pass (no keys found).";
+        let ocrBadge = "NONE";
+
+        if (ocrConfig.provider === "rolmocr") {
+            ocrTitle = "RolmOCR Transcription";
+            ocrDesc = "Perception: High-fidelity document text extraction.";
+            ocrBadge = "REDUCTO";
+        } else if (ocrConfig.provider === "google") {
+            ocrTitle = "Google Cloud Vision";
+            ocrDesc = "Perception: Extracts raw text perfectly.";
+            ocrBadge = "ENTERPRISE";
+        }
+
+        await reporter.updateNodeState("ocr", "active", undefined, undefined, ocrBadge, ocrTitle, ocrDesc);
+        await reporter.addLog("ocr", `Running OCR via ${ocrTitle}...`, "info");
 
         let processed = 0;
         await Promise.all(imageKeys.map(key => limit(async () => {
@@ -202,20 +321,52 @@ export async function processJob(
 
             const base64Image = Buffer.from(buffer).toString("base64");
             
-            // Step 1: Perception (Google Cloud Vision)
+            // Step 1: Perception (OCR)
             let ocrText = "";
-            if (env?.GOOGLE_VISION_API_KEY || (typeof process !== "undefined" && process.env.GOOGLE_VISION_API_KEY)) {
+            if (ocrConfig.provider === "rolmocr") {
+                ocrText = await extractWithRolmOCR(base64Image, env, reporter, fileName);
+            } else if (ocrConfig.provider === "google") {
                 ocrText = await extractWithGoogleVision(base64Image, env, reporter, fileName);
+            }
+
+            // Step 1.5: Deterministic Watermark Parsing
+            let watermarkData: any = null;
+            if (ocrText) {
+                const lines = ocrText.split('\n');
+                for (const line of lines) {
+                    const parsed = parseWatermark(line);
+                    if (parsed && parsed.auditId) {
+                        watermarkData = parsed;
+                        break;
+                    }
+                }
             }
 
             // Step 2: Cognition (Qwen3-VL)
             const extracted = await extractWithQwen(buffer, fileName, ocrText, env);
             if (extracted) {
+                if (watermarkData) {
+                    if (watermarkData.productDescription) extracted.ITEM_NAME = watermarkData.productDescription;
+                    if (watermarkData.weight) extracted.WEIGHT = watermarkData.weight;
+                    if (watermarkData.packaging) extracted.PACKAGING_TYPE = watermarkData.packaging;
+                    if (watermarkData.manufacturer) extracted.MANUFACTURER = watermarkData.manufacturer;
+                    if (watermarkData.country) extracted.COUNTRY = watermarkData.country;
+                    
+                    if (!extracted.rawVisionData) extracted.rawVisionData = {};
+                    extracted.rawVisionData[`${fileName}_watermark`] = watermarkData;
+                    
+                    await reporter.addLog("structured", `[${fileName}] Applied deterministic watermark metadata overrides`, "info");
+                }
+
                 // Attach the OCR text to the product so it saves to the DB later
                 if (ocrText) {
                     if (!extracted.rawVisionData) extracted.rawVisionData = {};
                     extracted.rawVisionData[`${fileName}_ocr`] = ocrText;
-                    await reporter.addLog("ocr", `[${fileName}] Raw text perfectly extracted via GCV`, "success");
+                    
+                    const successMessage = ocrConfig.provider === "rolmocr" 
+                        ? `[${fileName}] Raw text transcribed via RolmOCR` 
+                        : `[${fileName}] Raw text extracted via Google Vision`;
+                    await reporter.addLog("ocr", successMessage, "success");
                 }
                 rawExtractions.push(extracted);
                 await reporter.addLog("structured", `[${fileName}] Data extracted successfully by Qwen3-VL`, "success");
@@ -291,10 +442,10 @@ export async function processJob(
                 organisationId: orgId,
                 ITEM_NAME: (product.ITEM_NAME || "").toUpperCase(),
                 BARCODE: product.BARCODE ? normalizeBarcode(product.BARCODE) : "",
-                MANUFACTURER: (product.MANUFACTURER || "").toUpperCase(),
-                BRAND: (product.BRAND || "").toUpperCase(),
+                MANUFACTURER: product.MANUFACTURER ? normalizeManufacturer(product.MANUFACTURER) : "",
+                BRAND: product.BRAND ? normalizeBrand(product.BRAND) : "",
                 WEIGHT: product.WEIGHT ? normalizeWeight(product.WEIGHT) : "",
-                PACKAGING_TYPE: product.PACKAGING_TYPE ? normalizePackaging(product.PACKAGING_TYPE) : "",
+                PACKAGING_TYPE: product.PACKAGING_TYPE ? normalizePackaging(product.PACKAGING_TYPE, product.BRAND) : "",
                 COUNTRY: product.COUNTRY ? normalizeCountry(product.COUNTRY) : "",
                 VARIANT: (product.VARIANT || "").toUpperCase(),
                 TYPE: (product.TYPE || "").toUpperCase(),
