@@ -43,11 +43,11 @@ export class JobReporter {
 	}
 }
 
-async function extractWithGoogleVision(base64Image: string, env: any = null): Promise<string> {
+async function extractWithGoogleVision(base64Image: string, env: any = null, reporter: any = null, fileName: string = ""): Promise<string> {
     const apiKey = env?.GOOGLE_VISION_API_KEY || (typeof process !== "undefined" ? process.env.GOOGLE_VISION_API_KEY : undefined);
     
     if (!apiKey) {
-        console.warn("[Google Vision] Missing GOOGLE_VISION_API_KEY. Skipping OCR pass.");
+        if (reporter) await reporter.addLog("ocr", "Missing GOOGLE_VISION_API_KEY. Skipping OCR pass.", "warning");
         return "";
     }
 
@@ -64,14 +64,17 @@ async function extractWithGoogleVision(base64Image: string, env: any = null): Pr
         });
 
         if (!response.ok) {
-            console.error("[Google Vision] API error:", await response.text());
+            const errorText = await response.text();
+            console.error("[Google Vision] API error:", errorText);
+            if (reporter) await reporter.addLog("ocr", `[${fileName}] Google Vision API error (e.g. out of credits). Falling back to Qwen-only.`, "error");
             return "";
         }
 
         const data = await response.json();
         return data.responses?.[0]?.fullTextAnnotation?.text || "";
-    } catch (e) {
+    } catch (e: any) {
         console.error("[Google Vision] Failed to fetch:", e);
+        if (reporter) await reporter.addLog("ocr", `[${fileName}] Google Vision request failed. Falling back to Qwen-only.`, "error");
         return "";
     }
 }
@@ -96,9 +99,9 @@ Note 2: For COUNTRY, look closely for phrases like "Made in [Country]", "Produce
 Note 3: If text is blurry, illegible, or not explicitly printed on the package, you MUST output an empty string "". DO NOT guess, infer, or hallucinate missing values.
 Note 4 (CRITICAL): Here is the exact raw text extracted from this image by an enterprise OCR engine:
 ---
-${ocrText || "No readable text found."}
+${ocrText || "No OCR text provided."}
 ---
-Use the image for visual layout context, but RELY ENTIRELY on the provided OCR text for the exact spelling of words. Do not hallucinate words that are not in the OCR text!
+${ocrText ? "Use the image for visual layout context, but RELY ENTIRELY on the provided OCR text for the exact spelling of words. Do not hallucinate words that are not in the OCR text!" : "No OCR text was provided. You must read the text directly from the image."}
 Return ONLY valid JSON. Do not wrap in markdown blocks.`;
 
     const response = await fetch(endpoint, {
@@ -202,7 +205,7 @@ export async function processJob(
             // Step 1: Perception (Google Cloud Vision)
             let ocrText = "";
             if (env?.GOOGLE_VISION_API_KEY || (typeof process !== "undefined" && process.env.GOOGLE_VISION_API_KEY)) {
-                ocrText = await extractWithGoogleVision(base64Image, env);
+                ocrText = await extractWithGoogleVision(base64Image, env, reporter, fileName);
             }
 
             // Step 2: Cognition (Qwen3-VL)
