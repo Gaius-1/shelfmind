@@ -7,8 +7,10 @@ import { useProducts } from '#/hooks/useProducts.ts'
 import { useJobs } from '#/hooks/useJobs.ts'
 import { ImdbTable } from '#/components/dashboard/ImdbTable.tsx'
 import { Spinner } from '#/components/spinner.tsx'
-import { AlertCircle, FileCheck, ShieldAlert, BadgeAlert, HelpCircle } from 'lucide-react'
+import { AlertCircle, FileCheck, ShieldAlert, BadgeAlert } from 'lucide-react'
 import { cn } from '#/lib/utils.ts'
+import { Frame, FramePanel } from '#/components/reui/frame.tsx'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select.tsx'
 
 interface ReviewQueueSearch {
   jobId?: string
@@ -54,7 +56,7 @@ function ReviewQueueContent({ orgId, jobId }: ContentProps) {
   
   // Fetch jobs for the dropdown selection filter
   const { data: jobsData } = useJobs(orgId)
-  const completedJobs = (jobsData?.jobs || []).filter(j => j.status === 'COMPLETED')
+  const completedJobs = (jobsData?.jobs || []).filter((j: any) => j.status === 'COMPLETED')
 
   // Condition 1: Specific Job ID selected
   const jobQuery = useImdbRecords(orgId, jobId || 'dummy-no-job')
@@ -78,8 +80,8 @@ function ReviewQueueContent({ orgId, jobId }: ContentProps) {
     if (records.length === 0) {
       return { total: 0, flagged: 0, avgConfidence: 0 }
     }
-    const flaggedCount = records.filter(r => r.flagged).length
-    const totalConfidence = records.reduce((sum, r) => sum + (r.confidence || 0), 0)
+    const flaggedCount = records.filter((r: any) => r.flagged).length
+    const totalConfidence = records.reduce((sum: number, r: any) => sum + (r.confidence || 0), 0)
     return {
       total: records.length,
       flagged: flaggedCount,
@@ -87,11 +89,10 @@ function ReviewQueueContent({ orgId, jobId }: ContentProps) {
     }
   }, [records])
 
-  const handleJobChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const val = e.target.value
+  const handleJobChange = (val: string) => {
     navigate({
       to: '/dashboard/review-queue',
-      search: val ? { jobId: val } : {},
+      search: val && val !== 'all' ? { jobId: val } : {},
     })
   }
 
@@ -113,58 +114,61 @@ function ReviewQueueContent({ orgId, jobId }: ContentProps) {
           <label className="text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">
             Filter Ingestion:
           </label>
-          <select
-            value={jobId || ''}
-            onChange={handleJobChange}
-            className="h-10 px-3 text-xs bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800/80 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold text-neutral-755 dark:text-neutral-300 shadow-xs"
-          >
-            <option value="">All Flagged Products</option>
-            {completedJobs.map((job) => (
-              <option key={job.id} value={job.id}>
-                Batch #{job.id.substring(0, 8)} ({job.imageCount} imgs)
-              </option>
-            ))}
-          </select>
+          <Select value={jobId || 'all'} onValueChange={handleJobChange}>
+            <SelectTrigger className="w-[240px] bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800/80 rounded-xl shadow-xs">
+              <SelectValue placeholder="All Flagged Products" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Flagged Products</SelectItem>
+              {completedJobs.map((job: any) => (
+                <SelectItem key={job.id} value={job.id}>
+                  Batch #{job.id.substring(0, 8)} ({job.imageCount} imgs)
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
       {/* Metrics Summary Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Metric 1 */}
-        <div className="p-4 bg-white/40 dark:bg-neutral-900/20 backdrop-blur-xl border border-neutral-200 dark:border-neutral-800 rounded-2xl flex items-center gap-4 shadow-xs">
-          <div className="p-3 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-100/30 dark:border-indigo-900/30 rounded-xl shrink-0">
-            <FileCheck className="size-5" />
+      <Frame>
+        <FramePanel className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 border-0">
+          {/* Metric 1 */}
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-100/30 dark:border-indigo-900/30 rounded-xl shrink-0">
+              <FileCheck className="size-5" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">Total in View</span>
+              <span className="text-xl font-bold text-neutral-950 dark:text-neutral-50">{metrics.total}</span>
+            </div>
           </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">Total in View</span>
-            <span className="text-xl font-bold text-neutral-950 dark:text-neutral-50">{metrics.total}</span>
-          </div>
-        </div>
 
-        {/* Metric 2 */}
-        <div className="p-4 bg-white/40 dark:bg-neutral-900/20 backdrop-blur-xl border border-neutral-200 dark:border-neutral-800 rounded-2xl flex items-center gap-4 shadow-xs">
-          <div className="p-3 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-100/30 dark:border-amber-900/30 rounded-xl shrink-0">
-            <BadgeAlert className="size-5" />
+          {/* Metric 2 */}
+          <div className="flex items-center gap-4 border-t sm:border-t-0 sm:border-l border-neutral-200 dark:border-neutral-800 pt-4 sm:pt-0 sm:pl-4">
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-100/30 dark:border-amber-900/30 rounded-xl shrink-0">
+              <BadgeAlert className="size-5" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">Low Confidence (Flagged)</span>
+              <span className="text-xl font-bold text-neutral-950 dark:text-neutral-50">{metrics.flagged}</span>
+            </div>
           </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">Low Confidence (Flagged)</span>
-            <span className="text-xl font-bold text-neutral-950 dark:text-neutral-50">{metrics.flagged}</span>
-          </div>
-        </div>
 
-        {/* Metric 3 */}
-        <div className="p-4 bg-white/40 dark:bg-neutral-900/20 backdrop-blur-xl border border-neutral-200 dark:border-neutral-800 rounded-2xl flex items-center gap-4 shadow-xs">
-          <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-100/30 dark:border-emerald-900/30 rounded-xl shrink-0">
-            <ShieldAlert className="size-5" />
+          {/* Metric 3 */}
+          <div className="flex items-center gap-4 border-t sm:border-t-0 sm:border-l border-neutral-200 dark:border-neutral-800 pt-4 sm:pt-0 sm:pl-4">
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-100/30 dark:border-emerald-900/30 rounded-xl shrink-0">
+              <ShieldAlert className="size-5" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">Average Confidence</span>
+              <span className="text-xl font-bold text-neutral-950 dark:text-neutral-50">
+                {(metrics.avgConfidence * 100).toFixed(1)}%
+              </span>
+            </div>
           </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">Average Confidence</span>
-            <span className="text-xl font-bold text-neutral-950 dark:text-neutral-50">
-              {(metrics.avgConfidence * 100).toFixed(1)}%
-            </span>
-          </div>
-        </div>
-      </div>
+        </FramePanel>
+      </Frame>
 
       {/* Main Review Table */}
       <div className="mt-2">
