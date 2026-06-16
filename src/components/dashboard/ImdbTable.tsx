@@ -391,7 +391,7 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
     initialState: {
       pagination: {
         pageIndex: 0,
-        pageSize: 10,
+        pageSize: 25,
       },
     },
     state: {
