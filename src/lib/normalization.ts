@@ -27,19 +27,20 @@ export function normalizePackaging(raw: string): string {
 		clean.includes("hdpe") ||
 		clean.includes("pet")
 	)
-		return "Bottle";
-	if (clean.includes("can") || clean.includes("tin")) return "Can";
-	if (clean.includes("box") || clean.includes("carton")) return "Box";
-	if (clean.includes("pack") || clean.includes("packet")) return "Pack";
-	if (clean.includes("jar")) return "Jar";
-	if (clean.includes("pouch") || clean.includes("sachet")) return "Pouch";
-	if (clean.includes("tube")) return "Tube";
-	if (clean.includes("tub")) return "Tub";
-	if (clean.includes("bag")) return "Bag";
-	if (clean.includes("wrapper") || clean.includes("wrap")) return "Wrapper";
+		return "PLASTIC BOTTLE";
+	if (clean.includes("can") || clean.includes("tin")) return "CAN";
+	if (clean.includes("box") || clean.includes("carton")) return "BOX";
+	if (clean.includes("pack") || clean.includes("packet")) return "PACK";
+	if (clean.includes("jar") || clean.includes("glass")) return "GLASS JAR";
+	if (clean.includes("pouch") || clean.includes("sachet")) return "SACHET";
+	if (clean.includes("tube")) return "TUBE";
+	if (clean.includes("tub")) return "TUB";
+	if (clean.includes("bag")) return "BAG";
+	if (clean.includes("wrapper") || clean.includes("wrap")) return "WRAPPER";
+	if (clean.includes("tetra")) return "TETRA PAK";
 
-	// Default to title case
-	return clean.charAt(0).toUpperCase() + clean.slice(1);
+	// Default to uppercase
+	return raw.trim().toUpperCase();
 }
 
 // Country mappings
@@ -93,15 +94,12 @@ export function normalizeCountry(raw: string): string {
 	if (!raw) return "";
 	const clean = raw.trim().toLowerCase();
 	if (COUNTRY_MAP[clean]) {
-		return COUNTRY_MAP[clean];
+		return COUNTRY_MAP[clean].toUpperCase();
 	}
-	// Title case default
+	// UPPERCASE default
 	return raw
 		.trim()
-		.replace(/\s+/g, " ")
-		.split(" ")
-		.map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-		.join(" ");
+		.toUpperCase();
 }
 
 /** Regex matching common accented characters found in non-English (e.g. French) text. */

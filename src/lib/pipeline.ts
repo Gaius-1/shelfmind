@@ -5,7 +5,7 @@ import pLimit from "p-limit";
 import type { IMDBProduct } from "../types/imdb.ts";
 import { getUpload } from "./storage.ts";
 import { groupAndMergeImages } from "./grouping.ts";
-import { normalizeBarcode, normalizeField } from "./normalization.ts";
+import { normalizeBarcode, normalizeWeight, normalizePackaging, normalizeCountry } from "./normalization.ts";
 
 export class JobReporter {
 	private stub: any = null;
@@ -286,19 +286,19 @@ export async function processJob(
                 id: recordId,
                 jobId,
                 organisationId: orgId,
-                ITEM_NAME: product.ITEM_NAME || "",
+                ITEM_NAME: (product.ITEM_NAME || "").toUpperCase(),
                 BARCODE: product.BARCODE ? normalizeBarcode(product.BARCODE) : "",
-                MANUFACTURER: product.MANUFACTURER || "",
-                BRAND: product.BRAND || "",
-                WEIGHT: product.WEIGHT || "",
-                PACKAGING_TYPE: product.PACKAGING_TYPE || "",
-                COUNTRY: product.COUNTRY || "",
-                VARIANT: product.VARIANT || "",
-                TYPE: product.TYPE || "",
-                FRAGRANCE_FLAVOR: product.FRAGRANCE_FLAVOR || "",
-                PROMOTION: product.PROMOTION || "",
-                ADDONS: product.ADDONS || "",
-                TAGLINE: product.TAGLINE || "",
+                MANUFACTURER: (product.MANUFACTURER || "").toUpperCase(),
+                BRAND: (product.BRAND || "").toUpperCase(),
+                WEIGHT: product.WEIGHT ? normalizeWeight(product.WEIGHT) : "",
+                PACKAGING_TYPE: product.PACKAGING_TYPE ? normalizePackaging(product.PACKAGING_TYPE) : "",
+                COUNTRY: product.COUNTRY ? normalizeCountry(product.COUNTRY) : "",
+                VARIANT: (product.VARIANT || "").toUpperCase(),
+                TYPE: (product.TYPE || "").toUpperCase(),
+                FRAGRANCE_FLAVOR: (product.FRAGRANCE_FLAVOR || "").toUpperCase(),
+                PROMOTION: (product.PROMOTION || "").toUpperCase(),
+                ADDONS: (product.ADDONS || "").toUpperCase(),
+                TAGLINE: (product.TAGLINE || "").toUpperCase(),
                 confidence,
                 flagged,
                 rawExtraction: { 

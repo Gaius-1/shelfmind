@@ -10,7 +10,7 @@ import { Alert, AlertDescription, AlertTitle } from '#/components/reui/alert.tsx
 import { Spinner } from '#/components/spinner.tsx'
 import { cn } from '#/lib/utils.ts'
 
-const MAX_FILES = 20
+const MAX_FILES = 200
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 const ALLOWED_TYPES = 'image/jpeg, image/png, image/webp'
 
