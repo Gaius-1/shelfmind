@@ -391,8 +391,8 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
   const table = useReactTable({
     columns: tableColumns,
     data: records,
-    pageCount: Math.ceil((records?.length || 0) / pagination.pageSize),
     getRowId: (row: any) => row.id,
+    autoResetPageIndex: false,
     state: {
       pagination,
       sorting,
@@ -437,7 +437,7 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
 
       <DataGrid
         table={table}
-        recordCount={records?.length || 0}
+        recordCount={table.getFilteredRowModel().rows.length}
         tableLayout={{
           width: "auto",
         }}
