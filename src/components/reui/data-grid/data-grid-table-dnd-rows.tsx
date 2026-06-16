@@ -45,7 +45,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { Cell, flexRender, HeaderGroup, Row } from "@tanstack/react-table"
+import { flexRender } from "@tanstack/react-table"
+import type { Cell, HeaderGroup, Row } from "@tanstack/react-table"
 
 import { cn } from "#/lib/utils.ts"
 import { Button } from "#/components/ui/button.tsx"

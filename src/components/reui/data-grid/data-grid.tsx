@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useContext, useMemo } from "react"
-import {
+import type {
   Column,
   ColumnFiltersState,
   RowData,

@@ -31,12 +31,12 @@ import {
   closestCenter,
   DndContext,
   KeyboardSensor,
-  Modifier,
   MouseSensor,
   TouchSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type Modifier,
 } from "@dnd-kit/core"
 import {
   horizontalListSortingStrategy,
@@ -45,12 +45,9 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import {
-  Cell,
   flexRender,
-  Header,
-  HeaderGroup,
-  Row,
 } from "@tanstack/react-table"
+import type { Cell, Header, HeaderGroup, Row } from "@tanstack/react-table"
 
 import { Button } from "#/components/ui/button.tsx"
 import { HugeiconsIcon } from "@hugeicons/react"

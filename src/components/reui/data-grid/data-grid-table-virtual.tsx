@@ -21,7 +21,8 @@ import {
   DataGridTableViewport,
   getDataGridTableRowSections,
 } from "#/components/reui/data-grid/data-grid-table.tsx"
-import { flexRender, HeaderGroup, Row, Table } from "@tanstack/react-table"
+import { flexRender } from "@tanstack/react-table"
+import type { HeaderGroup, Row, Table } from "@tanstack/react-table"
 import {
   useVirtualizer,
   VirtualItem,

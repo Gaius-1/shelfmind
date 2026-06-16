@@ -14,15 +14,8 @@ import {
   useState,
 } from "react"
 import { useDataGrid } from "#/components/reui/data-grid/data-grid.tsx"
-import {
-  Cell,
-  Column,
-  flexRender,
-  Header,
-  HeaderGroup,
-  Row,
-  Table,
-} from "@tanstack/react-table"
+import { flexRender } from "@tanstack/react-table"
+import type { Cell, Column, Header, HeaderGroup, Row, Table } from "@tanstack/react-table"
 import { cva } from "class-variance-authority"
 
 import { cn } from "#/lib/utils.ts"

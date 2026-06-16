@@ -3,7 +3,7 @@ import {
   getColumnHeaderLabel,
   useDataGrid,
 } from "#/components/reui/data-grid/data-grid.tsx"
-import { Column } from "@tanstack/react-table"
+import type { Column } from "@tanstack/react-table"
 
 import { cn } from "#/lib/utils.ts"
 import { Button } from "#/components/ui/button.tsx"

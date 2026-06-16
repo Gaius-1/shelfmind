@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { Badge } from "#/components/reui/badge.tsx"
-import { Column } from "@tanstack/react-table"
+import type { Column } from "@tanstack/react-table"
 
 import { cn } from "#/lib/utils.ts"
 import { Button } from "#/components/ui/button.tsx"

@@ -2,7 +2,7 @@
 
 import { ReactElement } from "react"
 import { getColumnHeaderLabel } from "#/components/reui/data-grid/data-grid.tsx"
-import { Table } from "@tanstack/react-table"
+import type { Table } from "@tanstack/react-table"
 
 import {
   DropdownMenu,
