@@ -9,8 +9,6 @@ import {
   type SortingState,
   type ColumnDef,
 } from '@tanstack/react-table'
-import type { DragEndEvent } from '@dnd-kit/core'
-import { arrayMove } from '@dnd-kit/sortable'
 
 import { IMDB_COLUMNS, EXCEL_HEADERS, type ImdbColumnName } from '#/types/imdb.ts'
 import { useRecordMutation } from '#/hooks/useRecordMutation.ts'
@@ -42,7 +40,7 @@ import {
 } from '#/components/reui/data-grid/data-grid.tsx'
 import { DataGridPagination } from '#/components/reui/data-grid/data-grid-pagination.tsx'
 import { DataGridScrollArea } from '#/components/reui/data-grid/data-grid-scroll-area.tsx'
-import { DataGridTableDnd } from '#/components/reui/data-grid/data-grid-table-dnd.tsx'
+import { DataGridTable } from '#/components/reui/data-grid/data-grid-table.tsx'
 import { DataGridColumnVisibility } from '#/components/reui/data-grid/data-grid-column-visibility.tsx'
 import { RecordDetail } from '#/components/dashboard/RecordDetail.tsx'
 import { useRecord } from '#/hooks/useRecord.ts'
@@ -388,20 +386,6 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
     return cols
   }, [orgId, jobId])
 
-  const [columnOrder, setColumnOrder] = useState<string[]>(
-    tableColumns.map((column) => column.id as string)
-  )
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (active && over && active.id !== over.id) {
-      setColumnOrder((columnOrder) => {
-        const oldIndex = columnOrder.indexOf(active.id as string)
-        const newIndex = columnOrder.indexOf(over.id as string)
-        return arrayMove(columnOrder, oldIndex, newIndex)
-      })
-    }
-  }
 
   const table = useReactTable({
     columns: tableColumns,
@@ -411,11 +395,9 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
     state: {
       pagination,
       sorting,
-      columnOrder,
       columnVisibility,
       globalFilter,
     },
-    onColumnOrderChange: setColumnOrder,
     onPaginationChange: setPagination,
     onSortingChange: setSorting,
     onColumnVisibilityChange: setColumnVisibility,
@@ -456,15 +438,13 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
         table={table}
         recordCount={records?.length || 0}
         tableLayout={{
-          columnsDraggable: true,
-          columnsResizable: true,
-          headerSticky: true,
+          width: "auto",
         }}
       >
         <div className="w-full space-y-2.5">
           <DataGridContainer>
             <DataGridScrollArea>
-              <DataGridTableDnd handleDragEnd={handleDragEnd} />
+              <DataGridTable />
             </DataGridScrollArea>
           </DataGridContainer>
           <DataGridPagination />
