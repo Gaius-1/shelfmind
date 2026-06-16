@@ -1,7 +1,6 @@
-import * as React from 'react'
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { useFileUpload, formatBytes, type FileWithPreview } from '#/hooks/use-file-upload.ts'
+import { useFileUpload, formatBytes } from '#/hooks/use-file-upload.ts'
 import { Button } from '#/components/ui/button.tsx'
 import { Frame, FramePanel } from '#/components/reui/frame.tsx'
 import { HugeiconsIcon } from '@hugeicons/react'
