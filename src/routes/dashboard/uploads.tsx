@@ -21,7 +21,7 @@ function UploadsPage() {
           Batch Image Ingestion
         </h1>
         <p className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">
-          Upload up to 20 product packaging images. The hybrid AI extraction pipeline scans barcodes and reads product details in parallel.
+          Upload up to 200 product packaging images. The hybrid AI extraction pipeline scans barcodes and reads product details in parallel.
         </p>
       </div>
 
