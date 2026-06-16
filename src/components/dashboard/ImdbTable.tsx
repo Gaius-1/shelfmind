@@ -387,7 +387,7 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
     columns: tableColumns,
     data: records,
     getRowId: (row: any) => row.id,
-    autoResetPageIndex: false,
+    autoResetPageIndex: true,
     initialState: {
       pagination: {
         pageIndex: 0,
@@ -402,6 +402,7 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
     onSortingChange: setSorting,
     onColumnVisibilityChange: setColumnVisibility,
     onGlobalFilterChange: setGlobalFilter,
+    globalFilterFn: 'includesString',
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
