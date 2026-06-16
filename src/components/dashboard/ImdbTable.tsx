@@ -267,7 +267,8 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
       id: 'IMAGE',
       header: 'IMAGE',
       cell: ({ row }) => {
-        const images = row.original.rawExtraction?.images || []
+        const rawImages = row.original.rawExtraction?.images || []
+        const images = rawImages.filter((v: any, i: number, a: any) => a.findIndex((t: any) => t.fileName === v.fileName) === i)
         const displayImages = images.slice(0, 3)
         const remainder = images.length - 3
         const recordJobId = row.original.jobId || jobId

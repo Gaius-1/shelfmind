@@ -73,7 +73,8 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
     }
   }
 
-  const images = record.rawExtraction?.images || []
+  const rawImages = record.rawExtraction?.images || []
+  const images = rawImages.filter((v: any, i: number, a: any) => a.findIndex((t: any) => t.fileName === v.fileName) === i)
   // Take the first image as the primary for evidence
   const currentImage = images[0]
 

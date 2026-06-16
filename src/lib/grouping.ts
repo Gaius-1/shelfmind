@@ -153,7 +153,7 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 					(existing[k] as any) = newVal;
 				}
 			});
-			existing.sourceImages.push(...entry.sourceImages);
+			existing.sourceImages = Array.from(new Set([...existing.sourceImages, ...entry.sourceImages]));
 			if (entry.rawVisionData) {
 				existing.rawVisionData = { ...existing.rawVisionData, ...entry.rawVisionData };
 			}
