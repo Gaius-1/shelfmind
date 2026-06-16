@@ -453,7 +453,13 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
 
       {/* Record Detail Dialog */}
       <Dialog open={!!selectedRecordId} onOpenChange={(open) => !open && setSelectedRecordId(null)}>
-        <DialogContent className="max-w-[95vw] sm:max-w-5xl p-0 overflow-hidden bg-white dark:bg-neutral-950">
+        <DialogContent
+          className={cn(
+            "max-w-[95vw] sm:max-w-5xl p-0 overflow-hidden bg-white dark:bg-neutral-950",
+            "[&>[data-slot=dialog-close]]:bg-background [&>[data-slot=dialog-close]]:-end-6 [&>[data-slot=dialog-close]]:-top-6",
+            "[&>[data-slot=dialog-close]]:size-7 [&>[data-slot=dialog-close]]:rounded-full [&>[data-slot=dialog-close]]:border [&>[data-slot=dialog-close]]:shadow-sm"
+          )}
+        >
           {selectedRecordId && (
             <RecordDetailDialogContent 
               recordId={selectedRecordId} 

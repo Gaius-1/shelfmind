@@ -13,10 +13,11 @@ import {
   Save,
   CheckCircle,
   AlertTriangle,
-  Sparkles,
   Barcode,
   FileText,
 } from 'lucide-react'
+import { QwenDark } from '#/components/ui/svgs/qwenDark.tsx'
+import { QwenLight } from '#/components/ui/svgs/qwenLight.tsx'
 import { cn } from '#/lib/utils.ts'
 
 interface RecordDetailProps {
@@ -87,13 +88,6 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
       {/* Header Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-5">
         <div className="flex items-center gap-4">
-          <Button
-            variant="outline"
-            onClick={() => navigate({ to: `/dashboard/review-queue`, search: { jobId } as any })}
-          >
-            <ArrowLeft className="size-4 mr-2" />
-            Back to Queue
-          </Button>
           <div className="flex flex-col">
             <h1 className="text-xl font-bold">
               {record.ITEM_NAME || 'Unnamed Product'}
@@ -169,7 +163,8 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
                   className="flex-1"
                   onClick={() => setEvidenceTab('vision')}
                 >
-                  <Sparkles className="size-4 mr-2" />
+                  <QwenDark className="size-4 mr-2 hidden dark:block" />
+                  <QwenLight className="size-4 mr-2 block dark:hidden" />
                   Qwen2.5-VL
                 </Button>
                 <Button
