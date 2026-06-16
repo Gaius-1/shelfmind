@@ -5,7 +5,7 @@ import pLimit from "p-limit";
 import type { IMDBProduct } from "../types/imdb.ts";
 import { getUpload } from "./storage.ts";
 import { groupAndMergeImages } from "./grouping.ts";
-import { normalizeBarcode, normalizeWeight, normalizePackaging, normalizeCountry } from "./normalization.ts";
+import { normalizeBarcode, normalizeWeight, normalizePackaging, normalizeCountry, normalizeField } from "./normalization.ts";
 
 export class JobReporter {
 	private stub: any = null;
