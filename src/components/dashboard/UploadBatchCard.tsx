@@ -1,4 +1,4 @@
-import * as React from 'react'
+// import * as React from 'react'
 import { useEffect, useRef } from 'react'
 import { Link } from '@tanstack/react-router'
 import { Frame, FramePanel } from '#/components/reui/frame.tsx'
@@ -6,7 +6,7 @@ import { Button } from '#/components/ui/button.tsx'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { CloudUploadIcon, ArrowRight01Icon } from '@hugeicons/core-free-icons'
 import gsap from 'gsap'
-import { cn } from '#/lib/utils.ts'
+// import { cn } from '#/lib/utils.ts'
 
 const PROXIMITY_RADIUS = 200
 const PUSH_FORCE = 4
@@ -175,7 +175,7 @@ export function UploadBatchCard() {
         {/* Bottom Content */}
         <div className="relative z-10 flex flex-col items-center pointer-events-none gap-4">
           <p className="text-sm font-medium text-muted-foreground bg-card/50 backdrop-blur-md rounded-lg py-1 px-2 max-w-[280px]">
-            Upload up to 20 product images to run through the hybrid AI extraction pipeline.
+            Upload up to 200 product images to run through the hybrid AI extraction pipeline.
           </p>
 
           <Button asChild className="pointer-events-auto">
