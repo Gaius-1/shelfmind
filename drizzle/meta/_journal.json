@@ -22,6 +22,13 @@
       "when": 1781538885118,
       "tag": "0002_demonic_groot",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1781642100101,
+      "tag": "0003_overrated_night_thrasher",
+      "breakpoints": true
     }
   ]
 }

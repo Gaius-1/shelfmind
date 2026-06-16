@@ -1,0 +1,1 @@
+ALTER TABLE `jobs` ADD `created_at` integer;
