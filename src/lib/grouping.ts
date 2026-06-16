@@ -71,9 +71,21 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 				? levenshtein(barcode, extBarcode) > 2 
 				: (barcode && extBarcode && barcode !== extBarcode);
 				
-			const hasNameConflict = name && extName && name.length > 4 && extName.length > 4
-				? (!extName.includes(name) && !name.includes(extName))
-				: (name && extName && name !== extName);
+			const hasBrandConflict = brand && extBrand && brand !== extBrand;
+
+			const isSafeSubstringMatch = (n: string, extN: string) => {
+				if (n === extN) return true;
+				const isSub = extN.includes(n) || n.includes(extN);
+				if (!isSub) return false;
+				// Safe if they explicitly share a brand
+				if (brand && extBrand && brand === extBrand) return true;
+				// Safe if the matched substring is substantial (avoids generic words like "drink")
+				return n.length > 10 && extN.length > 10;
+			};
+
+			const hasNameConflict = name && extName 
+				? !isSafeSubstringMatch(name, extName)
+				: false;
 
 			// 1. Fuzzy Tag Matching (Handle "Front" / "Back" edge suffixes by checking for substrings or very low Levenshtein)
 			if (tag && extTag && tag.length > 5 && extTag.length > 5) {
@@ -102,10 +114,10 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 			}
 			
 			// 2. Fuzzy Barcode Matching (Allow 1-2 OCR digit errors for full barcodes)
-			if (barcode && extBarcode && !hasBarcodeConflict) { foundKey = key; break; }
+			if (barcode && extBarcode && !hasBarcodeConflict && !hasBrandConflict) { foundKey = key; break; }
 
 			// 3. Fuzzy Item Name Matching (Substring matching, e.g. "Mok Soap" inside "Mok Fine Soap")
-			if (name && extName && !hasNameConflict) { foundKey = key; break; }
+			if (name && extName && !hasNameConflict && !hasBrandConflict && !hasBarcodeConflict) { foundKey = key; break; }
 
 			// 4. BRAND isolation fallback (Merge back-of-pack images into front-of-pack if no conflicts exist)
 			if (brand && brand.length > 2 && extBrand === brand) {
