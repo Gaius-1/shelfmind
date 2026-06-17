@@ -39,6 +39,18 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 		return str;
 	};
 
+	const getSessionPrefix = (sourceImages?: string[]): string => {
+		if (!sourceImages || sourceImages.length === 0) return "";
+		const firstImage = sourceImages[0];
+		if (!firstImage) return "";
+		const filename = firstImage.split("/").pop()?.split("\\").pop() || "";
+		const parts = filename.split("_");
+		if (parts.length > 1 && parts[0].match(/^S\d+$/i)) {
+			return parts[0].toUpperCase();
+		}
+		return "";
+	};
+
 	const productMap = new Map<string, IMDBProduct>();
 
 	// Calculate information density to prioritize the best extraction
@@ -190,6 +202,17 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 			// 4. BRAND isolation fallback (Merge back-of-pack images into front-of-pack if no conflicts exist)
 			if (brand && brand.length > 2 && extBrand === brand) {
 				if (!hasBarcodeConflict && !hasNameConflict) {
+					foundKey = key; break;
+				}
+			}
+
+			// 5. Session Prefix Fallback
+			// If two images share the exact same collector session prefix (e.g. S227094844),
+			// and there are no barcode/brand conflicts, they belong to the same product.
+			const entrySession = getSessionPrefix(entry.sourceImages);
+			const extSession = getSessionPrefix(existing.sourceImages);
+			if (entrySession && extSession && entrySession === extSession) {
+				if (!hasBarcodeConflict && !hasBrandConflict) {
 					foundKey = key; break;
 				}
 			}

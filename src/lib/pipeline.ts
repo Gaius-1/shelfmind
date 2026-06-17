@@ -361,6 +361,54 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
     }
 }
 
+async function extractWatermarkWithQwen(croppedBase64: string, env: any = null): Promise<string> {
+    const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined);
+    const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-vediqvqa7d9er2yt.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
+
+    if (!apiKey) {
+        console.error("[Qwen3-VL] Missing QWEN_API_KEY for watermark extraction");
+        return "";
+    }
+
+    const prompt = `Read the watermark text printed along the edge/margin of this cropped image. 
+The watermark text typically consists of an audit ID (e.g. starting with GH, C, etc.) followed by some product descriptions or other words.
+Return ONLY the exact text printed on the image margin. If you cannot see any readable text or watermark, return an empty string "". Do not explain or add commentary.`;
+
+    try {
+        const response = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: "qwen3-vl-235b-a22b-instruct",
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: prompt },
+                            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${croppedBase64}` } }
+                        ]
+                    }
+                ]
+            })
+        });
+
+        if (!response.ok) {
+            console.error("[Qwen3-VL-Watermark] API error:", await response.text());
+            return "";
+        }
+
+        const data = await response.json();
+        const text = data.choices?.[0]?.message?.content || "";
+        return text.trim();
+    } catch (e) {
+        console.error("[Qwen3-VL-Watermark] Failed to fetch:", e);
+        return "";
+    }
+}
+
 export async function processJob(
 	jobId: string,
 	orgId: string,
@@ -412,7 +460,7 @@ export async function processJob(
 			// We do this BEFORE the full-image OCR pass so the cleanest possible crop
 			// feeds watermark detection — not as a last resort.
 			let watermarkData: any = null;
-			if (env?.IMAGES && ocrConfig.provider !== "none") {
+			if (env?.IMAGES) {
 				const margins: ("bottom" | "top" | "left" | "right")[] = ["bottom", "top", "left", "right"];
 				for (const margin of margins) {
 					try {
@@ -424,6 +472,9 @@ export async function processJob(
 							croppedOcr = await extractWithRolmOCR(croppedBase64, env, null, `${fileName}_${margin}`);
 						} else if (ocrConfig.provider === "google") {
 							croppedOcr = await extractWithGoogleVision(croppedBase64, env, null, `${fileName}_${margin}`);
+						}
+						if (!croppedOcr) {
+							croppedOcr = await extractWatermarkWithQwen(croppedBase64, env);
 						}
 						if (croppedOcr) {
 							for (const line of croppedOcr.split('\n')) {
