@@ -237,7 +237,7 @@ async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrTe
     
     // Read from Cloudflare env bindings if available, otherwise fallback to process.env
     const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined);
-    const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-vediqvqa7d9er2yt.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
+    const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://api.fireworks.ai/inference/v1/chat/completions";
 
     if (!apiKey) {
         console.error("[Qwen3-VL] Missing QWEN_API_KEY in environment");
@@ -280,7 +280,7 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            model: "qwen-vl-max",
+            model: "accounts/fireworks/models/qwen3-vl-235b-a22b-instruct",
             messages: [
                 {
                     role: "user",
