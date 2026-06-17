@@ -177,47 +177,31 @@ async function cropImageMargin(
 		return buffer;
 	}
 	try {
-		// Step 1: Crop the edge strip.
-		// • Gravity anchored to the ACTUAL edge (y=1.0 for bottom, y=0.0 for top, etc.)
-		//   so the watermark printed right at the image border is always included.
-		// • 480px deep (doubled from 240px) — wider net so the full watermark text fits.
+		// Crop the edge strip directly at high resolution (3200x960 / 960x3200).
+		// By cropping directly to high dimensions, we preserve the maximum native camera
+		// sensor pixels for the watermark text, rather than downscaling first and upscaling later.
 		const cropOptions: any = { fit: "crop", format: "jpeg", quality: 95 };
 		if (margin === "bottom") {
 			cropOptions.gravity = { x: 0.5, y: 1.0 }; // anchor to very bottom edge
-			cropOptions.width = 1600;
-			cropOptions.height = 480;
+			cropOptions.width = 3200;
+			cropOptions.height = 960;
 		} else if (margin === "top") {
 			cropOptions.gravity = { x: 0.5, y: 0.0 }; // anchor to very top edge
-			cropOptions.width = 1600;
-			cropOptions.height = 480;
+			cropOptions.width = 3200;
+			cropOptions.height = 960;
 		} else if (margin === "left") {
 			cropOptions.gravity = { x: 0.0, y: 0.5 }; // anchor to very left edge
-			cropOptions.width = 480;
-			cropOptions.height = 1600;
+			cropOptions.width = 960;
+			cropOptions.height = 3200;
 		} else if (margin === "right") {
 			cropOptions.gravity = { x: 1.0, y: 0.5 }; // anchor to very right edge
-			cropOptions.width = 480;
-			cropOptions.height = 1600;
+			cropOptions.width = 960;
+			cropOptions.height = 3200;
 		}
 		const croppedTransform = env.IMAGES.transform(new Response(buffer), cropOptions);
 		const croppedBuffer = await croppedTransform.arrayBuffer();
 		if (!croppedBuffer || croppedBuffer.byteLength === 0) return buffer;
-
-		// Step 2: Upscale the cropped strip 2×.
-		// At 480px strip height the watermark characters are ~20px tall.
-		// At 2× upscale (960px) they become ~40px — well within the reliable range
-		// for both Google Vision DOCUMENT_TEXT_DETECTION and RolmOCR.
-		const isHorizontal = margin === "top" || margin === "bottom";
-		const upscaleTransform = env.IMAGES.transform(new Response(croppedBuffer), {
-			width: isHorizontal ? 3200 : 960,
-			height: isHorizontal ? 960 : 3200,
-			fit: "contain",
-			format: "jpeg",
-			quality: 95,
-		});
-		const upscaledBuffer = await upscaleTransform.arrayBuffer();
-		if (!upscaledBuffer || upscaledBuffer.byteLength === 0) return croppedBuffer;
-		return upscaledBuffer;
+		return croppedBuffer;
 	} catch (e) {
 		console.error(`[Pipeline] Image crop for margin ${margin} failed:`, e);
 		return buffer;
