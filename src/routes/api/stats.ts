@@ -67,6 +67,36 @@ const routeOptions: any = {
             .from(jobs)
             .where(eq(jobs.organisationId, orgId))
 
+          // M/M job growth: jobs created this calendar month vs previous month
+          const now = new Date()
+          const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+          const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 10)
+          const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10)
+
+          const thisMonthJobStats = await db.select({ cnt: count() })
+            .from(jobs)
+            .where(and(
+              eq(jobs.organisationId, orgId),
+              sql`date(created_at) >= ${thisMonthStart}`
+            ))
+
+          const lastMonthJobStats = await db.select({ cnt: count() })
+            .from(jobs)
+            .where(and(
+              eq(jobs.organisationId, orgId),
+              sql`date(created_at) >= ${lastMonthStart}`,
+              sql`date(created_at) <= ${lastMonthEnd}`
+            ))
+
+          // Weekly jobs: jobs started in the past 7 days
+          const weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+          const weeklyJobStats = await db.select({ cnt: count() })
+            .from(jobs)
+            .where(and(
+              eq(jobs.organisationId, orgId),
+              sql`date(created_at) >= ${weekStart}`
+            ))
+
           // Pending duplicates
           const dupStats = await db.select({
             pendingDuplicates: count(),
@@ -125,6 +155,9 @@ const routeOptions: any = {
               flaggedCount: flaggedStats[0]?.flaggedCount ?? 0,
               totalJobs: jobStats[0]?.totalJobs ?? 0,
               pendingDuplicates: dupStats[0]?.pendingDuplicates ?? 0,
+              weeklyJobs: weeklyJobStats[0]?.cnt ?? 0,
+              thisMonthJobs: thisMonthJobStats[0]?.cnt ?? 0,
+              lastMonthJobs: lastMonthJobStats[0]?.cnt ?? 0,
             },
             daily: {
               products: dailyProducts,

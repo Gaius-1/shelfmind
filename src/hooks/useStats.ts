@@ -9,6 +9,9 @@ export interface StatsResponse {
     flaggedCount: number
     totalJobs: number
     pendingDuplicates: number
+    weeklyJobs: number
+    thisMonthJobs: number
+    lastMonthJobs: number
   }
   daily?: {
     products: { time: string; value: number }[]

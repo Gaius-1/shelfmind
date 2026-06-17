@@ -12,7 +12,6 @@ import { RecentExtractionJobs } from '#/components/dashboard/RecentExtractionJob
 // import { PipelineStorage } from '#/components/dashboard/PipelineStorage.tsx'
 import { Skeleton } from '#/components/ui/skeleton.tsx'
 import { FlaggedReviewQueue } from '#/components/dashboard/FlaggedReviewQueue.tsx'
-import { GlobalActivityStream } from '#/components/dashboard/GlobalActivityStream.tsx'
 
 export const Route = createFileRoute('/dashboard/')({
   component: DashboardHome,
@@ -60,6 +59,9 @@ function DashboardContent({ orgId }: DashboardContentProps) {
     flaggedCount: 0,
     totalJobs: 0,
     pendingDuplicates: 0,
+    weeklyJobs: 0,
+    thisMonthJobs: 0,
+    lastMonthJobs: 0,
   }
 
   const calculateElapsed = (startedAt: string | null, completedAt: string | null) => {
@@ -106,8 +108,10 @@ function DashboardContent({ orgId }: DashboardContentProps) {
         {/* Middle Right: Weekly Releases */}
         <div className="xl:col-span-8 min-h-[100px]">
           <WeeklyReleases 
-            weeklyJobs={jobs.filter(j => new Date(j.startedAt!).getTime() > Date.now() - 7*24*60*60*1000).length}
+            weeklyJobs={activeStats.weeklyJobs ?? 0}
             totalJobs={activeStats.totalJobs}
+            thisMonthJobs={activeStats.thisMonthJobs ?? 0}
+            lastMonthJobs={activeStats.lastMonthJobs ?? 0}
           />
         </div>
 
@@ -124,11 +128,6 @@ function DashboardContent({ orgId }: DashboardContentProps) {
         {/* Bottom Right: Flagged Queue */}
         <div className="xl:col-span-4 flex flex-col h-full min-h-[350px]">
           <FlaggedReviewQueue orgId={orgId} />
-        </div>
-
-        {/* Full Bottom: Global Activity Stream */}
-        <div className="xl:col-span-12 min-h-[300px]">
-          <GlobalActivityStream activeJobs={recentJobsList.filter(j => j.status === 'PROCESSING' || j.status === 'PENDING')} />
         </div>
 
       </div>
@@ -168,11 +167,6 @@ function DashboardSkeleton() {
           <div className="shrink-0 h-[140px]">
             <Skeleton className="w-full h-full rounded-[2rem]" />
           </div>
-        </div>
-
-        {/* Full Bottom */}
-        <div className="xl:col-span-12 h-[300px]">
-          <Skeleton className="w-full h-full rounded-[2rem]" />
         </div>
       </div>
     </div>
