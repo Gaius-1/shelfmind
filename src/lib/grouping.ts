@@ -118,28 +118,48 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 			const extBrand = normalizeStr(existing.BRAND);
 			const extAuditId = getBaseAuditId(existing.imageTag);
 
-			// 0. Fuzzy Audit ID Guard
-			// Two cases to distinguish:
-			//   A) OCR digit error:   GH0005109020 vs GH0005106020 (one digit wrong in middle) → MERGE
-			//   B) Product suffix:    GH000413316_A vs GH000413316_B (same audit, diff products) → BLOCK
+			// 0. Watermark / Audit ID matching
+			// Strategy: use the FULL normalised imageTag (auditId + product description) as the
+			// primary signal when both records were stamped with a physical watermark.
+			// This is more robust than comparing only the numeric audit ID, because:
+			//   • A single OCR digit error in a 12-char ID produces tag distance ≈ 1
+			//   • The product description suffix (e.g. "Mok", "Sister Powder Ginger") is
+			//     the same across both reads and acts as a strong corroborating signal
+			//
+			// Still protected cases:
+			//   A) _A / _B discriminator: "GH000413316_A" vs "GH000413316_B" — blocked first
+			//   B) Genuinely different products with similar IDs: their product-description
+			//      suffixes will differ, keeping the full-tag Levenshtein safely above threshold
 			if (auditId && extAuditId) {
-				// Extract single-letter product-discriminator suffix (e.g. _A, _B)
+				// Hard block: both IDs carry a discriminator suffix and those suffixes differ
 				const discrim = (id: string) => { const m = id.match(/_([A-Z])$/i); return m ? m[1].toUpperCase() : ""; };
 				const dA = discrim(auditId);
 				const dB = discrim(extAuditId);
-				// If both IDs carry a single-letter discriminator and those letters differ → different products, hard block
-				if (dA && dB && dA !== dB) continue;
-				// Fuzzy compare the numeric base (strip any discriminator suffix before Levenshtein)
+				if (dA && dB && dA !== dB) continue; // _A vs _B → definitely different products
+
+				// Strip side-label noise but keep the full product description intact for comparison
+				const fullTagA = normalizeTag(entry.imageTag);    // e.g. "gh000511418mok"
+				const fullTagB = normalizeTag(existing.imageTag); // e.g. "gh0005111418mok"
+
+				// Full-tag Levenshtein — a single OCR digit error shifts distance by exactly 1
+				// regardless of where it falls in the string, even in a 18-char audit code.
+				// Threshold of 2 allows one digit wrong + one cosmetic char difference (space, dash).
+				const fullTagDist = levenshtein(fullTagA, fullTagB);
+				if (fullTagDist <= 2) {
+					foundKey = key; break; // same physical watermark, OCR noise accepted
+				}
+
+				// Fallback: if full-tag strings diverge more (description changed significantly)
+				// still allow the merge when the numeric ID base is an exact or 1-char-off match
 				const numBase = (id: string) => id.replace(/_[A-Z]$/i, "");
-				const baseA = numBase(auditId);
-				const baseB = numBase(extAuditId);
-				const idDist = levenshtein(baseA, baseB);
-				// Hard block only when distance > 1 OR both IDs have explicit discriminators that differ
-				// (already blocked above). Distance == 1 on a long audit code is almost certainly an
-				// OCR digit error on the same physical watermark — allow the merge.
-				// Distance == 0 is an exact match → definitely the same product.
-				if (idDist > 1) continue;   // genuinely different audit IDs → skip to next candidate
-				foundKey = key; break;       // exact or 1-char OCR error → same product
+				const idDist = levenshtein(numBase(auditId), numBase(extAuditId));
+				if (idDist <= 1) {
+					foundKey = key; break; // same visit ID within OCR tolerance
+				}
+
+				// Audit IDs are too different — skip to next candidate without falling through
+				// to name/barcode matchers (different watermarks = different visit = different product)
+				continue;
 			}
 
 			// Helper for Conflict Detection
