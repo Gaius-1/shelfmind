@@ -131,9 +131,15 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 				if (dA && dB && dA !== dB) continue;
 				// Fuzzy compare the numeric base (strip any discriminator suffix before Levenshtein)
 				const numBase = (id: string) => id.replace(/_[A-Z]$/i, "");
-				const idDist = levenshtein(numBase(auditId), numBase(extAuditId));
-				if (idDist > 0) continue;   // different audit IDs → different products (exact match only)
-				foundKey = key; break;       // exact numeric base match → same product
+				const baseA = numBase(auditId);
+				const baseB = numBase(extAuditId);
+				const idDist = levenshtein(baseA, baseB);
+				// Hard block only when distance > 1 OR both IDs have explicit discriminators that differ
+				// (already blocked above). Distance == 1 on a long audit code is almost certainly an
+				// OCR digit error on the same physical watermark — allow the merge.
+				// Distance == 0 is an exact match → definitely the same product.
+				if (idDist > 1) continue;   // genuinely different audit IDs → skip to next candidate
+				foundKey = key; break;       // exact or 1-char OCR error → same product
 			}
 
 			// Helper for Conflict Detection
