@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   Barcode,
   FileText,
+  Tag,
 } from 'lucide-react'
 import { QwenDark } from '#/components/ui/svgs/qwenDark.tsx'
 import { QwenLight } from '#/components/ui/svgs/qwenLight.tsx'
@@ -47,8 +48,9 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
     setFormFields(fields)
   }, [record])
 
-  const [evidenceTab, setEvidenceTab] = useState<'zxing' | 'ocr' | 'vision'>('vision')
+  const [evidenceTab, setEvidenceTab] = useState<'zxing' | 'ocr' | 'vision' | 'watermark'>('vision')
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [selectedImageIdx, setSelectedImageIdx] = useState(0)
 
   const mutation = useRecordMutation({ orgId, jobId, recordId: record.id })
 
@@ -75,8 +77,7 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
 
   const rawImages = record.rawExtraction?.images || []
   const images = rawImages.filter((v: any, i: number, a: any) => a.findIndex((t: any) => t.fileName === v.fileName) === i)
-  // Take the first image as the primary for evidence
-  const currentImage = images[0]
+  const currentImage = images[selectedImageIdx] || images[0]
 
   // Construct image retrieval URL
   const getImageUrl = (fileName: string) => {
@@ -129,15 +130,25 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
             <CardContent>
               {images.length > 0 ? (
                 <div className="grid grid-cols-2 gap-4">
-                  {images.map((img: any, idx: number) => (
-                    <div key={idx} className="relative aspect-square w-full rounded-md border flex items-center justify-center overflow-hidden">
-                      <img
-                        src={getImageUrl(img.fileName)}
-                        alt={`Product extraction source ${idx + 1}`}
-                        className="max-h-full max-w-full object-contain"
-                      />
-                    </div>
-                  ))}
+                  {images.map((img: any, idx: number) => {
+                    const isSelected = selectedImageIdx === idx;
+                    return (
+                      <div
+                        key={idx}
+                        className={cn(
+                          "relative aspect-square w-full rounded-md border flex items-center justify-center overflow-hidden cursor-pointer transition-all hover:border-neutral-400",
+                          isSelected ? "ring-2 ring-primary ring-offset-2 border-primary" : ""
+                        )}
+                        onClick={() => setSelectedImageIdx(idx)}
+                      >
+                        <img
+                          src={getImageUrl(img.fileName)}
+                          alt={`Product extraction source ${idx + 1}`}
+                          className="max-h-full max-w-full object-contain"
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="aspect-square w-full rounded-md border flex items-center justify-center text-sm text-muted-foreground">
@@ -157,11 +168,11 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
               {/* Evidence tabs header */}
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   variant={evidenceTab === 'vision' ? 'default' : 'outline'}
                   size="sm"
-                  className="flex-1"
+                  className="flex-1 min-w-[100px]"
                   onClick={() => setEvidenceTab('vision')}
                 >
                   <QwenDark className="size-4 mr-2 hidden dark:block" />
@@ -171,7 +182,7 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
                 <Button
                   variant={evidenceTab === 'ocr' ? 'default' : 'outline'}
                   size="sm"
-                  className="flex-1"
+                  className="flex-1 min-w-[100px]"
                   onClick={() => setEvidenceTab('ocr')}
                 >
                   <FileText className="size-4 mr-2" />
@@ -180,11 +191,20 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
                 <Button
                   variant={evidenceTab === 'zxing' ? 'default' : 'outline'}
                   size="sm"
-                  className="flex-1"
+                  className="flex-1 min-w-[100px]"
                   onClick={() => setEvidenceTab('zxing')}
                 >
                   <Barcode className="size-4 mr-2" />
                   ZXing
+                </Button>
+                <Button
+                  variant={evidenceTab === 'watermark' ? 'default' : 'outline'}
+                  size="sm"
+                  className="flex-1 min-w-[100px]"
+                  onClick={() => setEvidenceTab('watermark')}
+                >
+                  <Tag className="size-4 mr-2" />
+                  Watermark
                 </Button>
               </div>
 
@@ -215,6 +235,13 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
                       )}
                     </p>
                   </div>
+                )}
+                {evidenceTab === 'watermark' && (
+                  <pre className="whitespace-pre-wrap">
+                    {currentImage?.watermark
+                      ? JSON.stringify(currentImage.watermark, null, 2)
+                      : '// No Watermark data available'}
+                  </pre>
                 )}
               </div>
             </CardContent>
