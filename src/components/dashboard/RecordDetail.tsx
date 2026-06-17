@@ -8,15 +8,15 @@ import { Label } from '#/components/ui/label.tsx'
 import { IMDB_COLUMNS, EXCEL_HEADERS, type ImdbColumnName } from '#/types/imdb.ts'
 import { useRecordMutation } from '#/hooks/useRecordMutation.ts'
 import { Spinner } from '#/components/spinner.tsx'
+import { HugeiconsIcon } from '@hugeicons/react'
 import {
-  ArrowLeft,
-  Save,
-  CheckCircle,
-  AlertTriangle,
-  Barcode,
-  FileText,
-  Tag,
-} from 'lucide-react'
+  AlertCircleIcon,
+  File02Icon,
+  BarcodeIcon,
+  Tag01Icon,
+  CheckmarkCircle01Icon,
+  SaveIcon,
+} from '@hugeicons/core-free-icons'
 import { QwenDark } from '#/components/ui/svgs/qwenDark.tsx'
 import { QwenLight } from '#/components/ui/svgs/qwenLight.tsx'
 import { cn } from '#/lib/utils.ts'
@@ -103,7 +103,7 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
         <div className="flex items-center gap-3">
           {record.flagged && (
             <div className="flex items-center gap-2 px-3 py-1 rounded-md bg-destructive/10 text-destructive text-sm font-medium">
-              <AlertTriangle className="size-4" />
+              <HugeiconsIcon icon={AlertCircleIcon} className="size-4" />
               Needs Human Review
             </div>
           )}
@@ -185,7 +185,7 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
                   className="flex-1 min-w-[100px]"
                   onClick={() => setEvidenceTab('ocr')}
                 >
-                  <FileText className="size-4 mr-2" />
+                  <HugeiconsIcon icon={File02Icon} className="size-4 mr-2" />
                   Raw OCR
                 </Button>
                 <Button
@@ -194,7 +194,7 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
                   className="flex-1 min-w-[100px]"
                   onClick={() => setEvidenceTab('zxing')}
                 >
-                  <Barcode className="size-4 mr-2" />
+                  <HugeiconsIcon icon={BarcodeIcon} className="size-4 mr-2" />
                   ZXing
                 </Button>
                 <Button
@@ -203,7 +203,7 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
                   className="flex-1 min-w-[100px]"
                   onClick={() => setEvidenceTab('watermark')}
                 >
-                  <Tag className="size-4 mr-2" />
+                  <HugeiconsIcon icon={Tag01Icon} className="size-4 mr-2" />
                   Watermark
                 </Button>
               </div>
@@ -303,7 +303,7 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
               <div className="text-sm text-muted-foreground">
                 {saveSuccess ? (
                   <span className="text-primary flex items-center gap-2">
-                    <CheckCircle className="size-4" />
+                    <HugeiconsIcon icon={CheckmarkCircle01Icon} className="size-4" />
                     Record saved successfully!
                   </span>
                 ) : (
@@ -319,7 +319,7 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
                   </>
                 ) : (
                   <>
-                    <Save className="size-4 mr-2" />
+                    <HugeiconsIcon icon={SaveIcon} className="size-4 mr-2" />
                     Save Changes
                   </>
                 )}

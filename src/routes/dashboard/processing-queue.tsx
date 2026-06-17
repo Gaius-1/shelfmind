@@ -37,11 +37,11 @@ function ProcessingQueueContent({ orgId }: { orgId: string }) {
   return (
     <div className="flex flex-col gap-6 p-6 lg:p-8 max-w-7xl mx-auto w-full">
       {/* Page Header */}
-      <div className="flex flex-col gap-1.5 border-b border-neutral-800 pb-5">
-        <h1 className="text-2xl font-extrabold tracking-tight text-neutral-50 font-heading">
+      <div className="flex flex-col gap-1.5 border-b border-neutral-200 dark:border-neutral-800 pb-5">
+        <h1 className="text-2xl font-extrabold tracking-tight text-neutral-900 dark:text-neutral-50 font-heading">
           Pipeline Ingestion Queue
         </h1>
-        <p className="text-xs text-neutral-400 font-medium">
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">
           Track historical and active ingestion jobs. Each row shows individual pipeline stage progress.
         </p>
       </div>
@@ -51,11 +51,11 @@ function ProcessingQueueContent({ orgId }: { orgId: string }) {
         {isPending ? (
           <div className="flex flex-col gap-3">
             {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-24 bg-neutral-900 rounded-2xl animate-pulse border border-neutral-800/50" />
+              <div key={i} className="h-24 bg-neutral-100 dark:bg-neutral-900 rounded-2xl animate-pulse border border-neutral-200 dark:border-neutral-800/50" />
             ))}
           </div>
         ) : error ? (
-          <div className="p-4 rounded-xl bg-rose-950/20 text-rose-400 text-xs font-semibold border border-rose-900/30">
+          <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 text-xs font-semibold border border-rose-200 dark:border-rose-900/30">
             Failed to load jobs list: {error.message}
           </div>
         ) : (
