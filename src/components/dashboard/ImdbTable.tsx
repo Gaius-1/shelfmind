@@ -16,7 +16,6 @@ import { Spinner } from '#/components/spinner.tsx'
 import {
   Eye,
   AlertCircle,
-  Check,
   Edit3,
 } from 'lucide-react'
 import { cn } from '#/lib/utils.ts'
@@ -141,7 +140,7 @@ function EditableCell({ record, columnName, value, orgId, jobId }: EditableCellP
 
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-1">
         {mutation.isPending ? (
-          <Spinner size="xs" className="text-indigo-500" />
+          <Spinner size="sm" className="text-indigo-500" />
         ) : (
           <Edit3 className="size-3 text-neutral-400 hover:text-indigo-500 transition-colors" />
         )}
@@ -164,7 +163,7 @@ function EditableCell({ record, columnName, value, orgId, jobId }: EditableCellP
 }
 
 // ─── Record Detail Dialog Component ──────────────────────────────────────────
-function RecordDetailDialogContent({ recordId, orgId, jobId, onClose }: { recordId: string, orgId: string, jobId: string, onClose: () => void }) {
+function RecordDetailDialogContent({ recordId, orgId, jobId }: { recordId: string, orgId: string, jobId: string }) {
   const { data: recordData, isPending, error } = useRecord(orgId, recordId)
   
   if (isPending) {
@@ -204,7 +203,6 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
   // We'll manage column visibility in table state, but rely on Tailwind for mobile hiding.
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {
-      flagged: true,
       IMAGE: true,
       ITEM_NAME: true,
       BARCODE: true,
@@ -230,32 +228,6 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
   const tableColumns = useMemo<ColumnDef<any>[]>(() => {
     const cols: ColumnDef<any>[] = []
 
-    // 1. Flagged Status Column
-    cols.push({
-      id: 'flagged',
-      header: '',
-      accessorKey: 'flagged',
-      cell: ({ row }: any) => {
-        if (row.original.flagged) {
-          return (
-            <div className="flex items-center justify-center" title="Requires review">
-              <AlertCircle className="size-4 text-amber-500 fill-amber-500/10 shrink-0" />
-            </div>
-          )
-        }
-        return (
-          <div className="flex items-center justify-center">
-            <Check className="size-3.5 text-emerald-500 shrink-0" />
-          </div>
-        )
-      },
-      size: 40,
-      enableSorting: true,
-      meta: {
-        headerClassName: "w-10",
-        cellClassName: "w-10",
-      }
-    })
 
     // 2. IMAGE Collage
     cols.push({
@@ -466,7 +438,6 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
               recordId={selectedRecordId} 
               orgId={orgId} 
               jobId={jobId} 
-              onClose={() => setSelectedRecordId(null)} 
             />
           )}
         </DialogContent>
