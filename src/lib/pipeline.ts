@@ -523,8 +523,10 @@ export async function processJob(
                 }
             }
 
-            // Step 2: Cognition (Qwen3-VL) — receives clean background-removed buffer
-            const extracted = await extractWithQwen(cleanBuffer, fileName, ocrText, env);
+            // Step 2: Cognition (Qwen3-VL) — receives clean background-removed buffer if watermark
+            // was already found, otherwise receives the original buffer so it can see the watermark margins.
+            const cognitionBuffer = watermarkData ? cleanBuffer : buffer;
+            const extracted = await extractWithQwen(cognitionBuffer, fileName, ocrText, env);
             if (extracted) {
                 // Sanitize hallucinated prompt example tags (e.g. GH000364912)
                 if (extracted.imageTag && (extracted.imageTag.includes("GH000364912") || extracted.imageTag.toUpperCase().includes("U-FRESH ORANGE"))) {
