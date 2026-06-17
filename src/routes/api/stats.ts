@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { db } from '#/db/index.ts'
 import { jobs, imdbRecords, duplicatePairs } from '#/db/schema.ts'
 import * as schema from '#/db/schema.ts'
-import { eq, and, count, avg } from 'drizzle-orm'
+import { eq, and, count, avg, sql } from 'drizzle-orm'
 
 const routeOptions: any = {
   server: {
@@ -77,6 +77,46 @@ const routeOptions: any = {
               eq(duplicatePairs.status, 'PENDING')
             ))
 
+          // 4. Daily time-series for sparklines (last 8 days) — single grouped query
+          const days = 8
+          const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+          const dailyRows = await db.all(sql`
+            SELECT
+              date(created_at) as day,
+              COUNT(*) as cnt,
+              AVG(confidence) as avg_conf,
+              SUM(CASE WHEN flagged = 1 THEN 1 ELSE 0 END) as flagged_cnt
+            FROM imdb_records
+            WHERE organisation_id = ${orgId}
+              AND status = 'ACTIVE'
+              AND date(created_at) >= ${cutoffDate}
+            GROUP BY date(created_at)
+            ORDER BY date(created_at) ASC
+          `).catch(() => [] as any[])
+
+          // Build a map from date string to row data
+          const dayMap = new Map<string, { cnt: number; avg_conf: number | null; flagged_cnt: number }>()
+          for (const row of dailyRows) {
+            dayMap.set(row.day, { cnt: row.cnt ?? 0, avg_conf: row.avg_conf, flagged_cnt: row.flagged_cnt ?? 0 })
+          }
+
+          // Fill last 8 days, including days with no data
+          const dailyProducts: { time: string; value: number }[] = []
+          const dailyConfidence: { time: string; value: number }[] = []
+          const dailyFlagged: { time: string; value: number }[] = []
+
+          for (let i = days - 1; i >= 0; i--) {
+            const dayDate = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
+            const dateStr = dayDate.toISOString().slice(0, 10)
+            const label = dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            const row = dayMap.get(dateStr)
+
+            dailyProducts.push({ time: label, value: row?.cnt ?? 0 })
+            dailyConfidence.push({ time: label, value: Number((row?.avg_conf ?? 0).toFixed(2)) })
+            dailyFlagged.push({ time: label, value: row?.flagged_cnt ?? 0 })
+          }
+
           return new Response(JSON.stringify({
             success: true,
             stats: {
@@ -85,6 +125,11 @@ const routeOptions: any = {
               flaggedCount: flaggedStats[0]?.flaggedCount ?? 0,
               totalJobs: jobStats[0]?.totalJobs ?? 0,
               pendingDuplicates: dupStats[0]?.pendingDuplicates ?? 0,
+            },
+            daily: {
+              products: dailyProducts,
+              confidence: dailyConfidence,
+              flagged: dailyFlagged,
             }
           }), {
             status: 200,

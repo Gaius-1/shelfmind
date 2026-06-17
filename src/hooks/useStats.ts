@@ -10,6 +10,11 @@ export interface StatsResponse {
     totalJobs: number
     pendingDuplicates: number
   }
+  daily?: {
+    products: { time: string; value: number }[]
+    confidence: { time: string; value: number }[]
+    flagged: { time: string; value: number }[]
+  }
 }
 
 /**

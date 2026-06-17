@@ -99,6 +99,7 @@ function DashboardContent({ orgId }: DashboardContentProps) {
             totalProducts={activeStats.totalProducts}
             avgConfidence={activeStats.meanConfidence}
             flaggedCount={activeStats.flaggedCount}
+            daily={statsData?.daily}
           />
         </div>
 

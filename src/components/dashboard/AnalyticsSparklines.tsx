@@ -16,44 +16,37 @@ interface AnalyticsSparklinesProps {
   totalProducts: number
   avgConfidence: number
   flaggedCount: number
+  daily?: {
+    products: SparklineData[]
+    confidence: SparklineData[]
+    flagged: SparklineData[]
+  }
 }
 
-export function AnalyticsSparklines({ totalProducts, avgConfidence, flaggedCount }: AnalyticsSparklinesProps) {
-  const totalProductsData = React.useMemo(() => {
-    if (totalProducts === 0) {
-      return Array.from({ length: 8 }).map((_, i) => ({ time: `Day ${i + 1}`, value: 0 }))
-    }
-    return Array.from({ length: 8 }).map((_, i) => {
-      const ratio = (i + 1) / 8
-      const val = Math.round(totalProducts * (0.6 + ratio * 0.4 + (Math.random() * 0.1 - 0.05)))
-      return { time: `Day ${i + 1}`, value: Math.max(0, Math.min(totalProducts, val)) }
-    })
-  }, [totalProducts])
+export function AnalyticsSparklines({ totalProducts, avgConfidence, flaggedCount, daily }: AnalyticsSparklinesProps) {
+  const emptyDays = Array.from({ length: 8 }).map((_, i) => {
+    const d = new Date(Date.now() - (7 - i) * 24 * 60 * 60 * 1000)
+    return { time: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), value: 0 }
+  })
 
-  const confidenceData = React.useMemo(() => {
-    if (avgConfidence === 0) {
-      return Array.from({ length: 8 }).map((_, i) => ({ time: `Day ${i + 1}`, value: 0 }))
-    }
-    return Array.from({ length: 8 }).map((_, i) => {
-      const val = avgConfidence * (0.95 + Math.random() * 0.1)
-      return { time: `Day ${i + 1}`, value: Number(Math.min(1.0, val).toFixed(2)) }
-    })
-  }, [avgConfidence])
+  const totalProductsData = daily?.products ?? emptyDays
+  const confidenceData = daily?.confidence ?? emptyDays
+  const flaggedData = daily?.flagged ?? emptyDays
 
-  const flaggedData = React.useMemo(() => {
-    if (flaggedCount === 0) {
-      return Array.from({ length: 8 }).map((_, i) => ({ time: `Day ${i + 1}`, value: 0 }))
-    }
-    return Array.from({ length: 8 }).map((_, i) => {
-      const ratio = (8 - i) / 8
-      const val = Math.round(flaggedCount * (0.8 + ratio * 0.5 + (Math.random() * 0.1 - 0.05)))
-      return { time: `Day ${i + 1}`, value: Math.max(0, val) }
-    })
-  }, [flaggedCount])
+  // Compute real trends from first vs last day
+  const computeTrend = (data: SparklineData[]): { label: string; isUp: boolean } => {
+    if (data.length < 2) return { label: '0%', isUp: true }
+    const first = data[0].value
+    const last = data[data.length - 1].value
+    if (first === 0 && last === 0) return { label: '0%', isUp: true }
+    if (first === 0) return { label: '+100%', isUp: true }
+    const pct = Math.round(((last - first) / first) * 100)
+    return { label: `${pct >= 0 ? '+' : ''}${pct}%`, isUp: pct >= 0 }
+  }
 
-  const productsTrend = totalProducts > 0 ? "+12%" : "0%"
-  const confidenceTrend = avgConfidence > 0 ? "+3.5%" : "0%"
-  const flaggedTrend = flaggedCount > 0 ? "-5%" : "0%"
+  const productsTrend = computeTrend(totalProductsData)
+  const confidenceTrend = computeTrend(confidenceData)
+  const flaggedTrend = computeTrend(flaggedData)
 
   return (
     <div className="flex flex-col gap-4 w-full h-full">
@@ -80,9 +73,9 @@ export function AnalyticsSparklines({ totalProducts, avgConfidence, flaggedCount
           data={totalProductsData}
           color="var(--color-primary)"
           gradientId="sparkline-primary"
-          trend={productsTrend}
-          trendIcon={TradeUpIcon}
-          trendVariant="success-light"
+          trend={productsTrend.label}
+          trendIcon={productsTrend.isUp ? TradeUpIcon : TradeDownIcon}
+          trendVariant={productsTrend.isUp ? "success-light" : "info-light"}
         />
         <SparklineCard 
           title="Avg. Extraction Confidence"
@@ -92,9 +85,9 @@ export function AnalyticsSparklines({ totalProducts, avgConfidence, flaggedCount
           data={confidenceData}
           color="var(--color-success)"
           gradientId="sparkline-success"
-          trend={confidenceTrend}
-          trendIcon={TradeUpIcon}
-          trendVariant="success-light"
+          trend={confidenceTrend.label}
+          trendIcon={confidenceTrend.isUp ? TradeUpIcon : TradeDownIcon}
+          trendVariant={confidenceTrend.isUp ? "success-light" : "info-light"}
         />
         <SparklineCard 
           title="Flagged for Review"
@@ -104,9 +97,9 @@ export function AnalyticsSparklines({ totalProducts, avgConfidence, flaggedCount
           data={flaggedData}
           color="var(--color-warning)"
           gradientId="sparkline-warning"
-          trend={flaggedTrend}
-          trendIcon={TradeDownIcon}
-          trendVariant="info-light"
+          trend={flaggedTrend.label}
+          trendIcon={flaggedTrend.isUp ? TradeUpIcon : TradeDownIcon}
+          trendVariant={flaggedTrend.isUp ? "info-light" : "success-light"}
         />
       </div>
     </div>
