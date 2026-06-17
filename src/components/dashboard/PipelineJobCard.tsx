@@ -149,22 +149,6 @@ export function PipelineJobCard({ job }: PipelineJobCardProps) {
             Batch #{job.id.substring(0, 8)}
           </span>
 
-          {/* Status pill */}
-          <span
-            className={cn(
-              "text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg flex items-center gap-1.5",
-              isPending && "bg-amber-950/50 text-amber-400 border border-amber-800/30",
-              isProcessing && "bg-indigo-950/50 text-indigo-400 border border-indigo-800/30",
-              isCompleted && "bg-emerald-950/50 text-emerald-400 border border-emerald-800/30",
-              isFailed && "bg-rose-950/50 text-rose-400 border border-rose-800/30",
-            )}
-          >
-            {isProcessing && <span className="size-1.5 rounded-full bg-indigo-400 animate-ping" />}
-            {isFailed && <AlertCircle className="size-3" />}
-            {isCompleted && <CheckCircle2 className="size-3" />}
-            {job.status}
-          </span>
-
           <div className="h-4 w-px bg-neutral-800 hidden sm:block" />
 
           <span className="text-[11px] text-neutral-500 font-medium flex items-center gap-1.5">
