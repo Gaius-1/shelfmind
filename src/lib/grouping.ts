@@ -28,6 +28,20 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 		return score;
 	};
 
+	// Side-aware confidence boost: trust the right side for the right fields
+	const FRONT_FIELDS = new Set(["ITEM_NAME", "BRAND", "WEIGHT", "VARIANT", "TAGLINE"]);
+	const BACK_FIELDS  = new Set(["MANUFACTURER", "COUNTRY", "ADDONS", "PROMOTION"]);
+	const BARCODE_FIELDS = new Set(["BARCODE"]);
+
+	const getSideBoost = (side: string | undefined, field: string): number => {
+		if (!side) return 0;
+		const s = side.toLowerCase();
+		if (s === "front"   && FRONT_FIELDS.has(field))   return 0.10;
+		if (s === "back"    && BACK_FIELDS.has(field))    return 0.10;
+		if (s === "barcode" && BARCODE_FIELDS.has(field)) return 0.15;
+		return 0;
+	};
+
 	// Sort by highest density first so the clearest image dictates the base record
 	const sortedExtractions = [...rawExtractions].sort((a, b) => getDensity(b) - getDensity(a));
 
@@ -138,7 +152,7 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 			// Aggregation: Keep the most confident extraction, fallback to longest string
 			Object.keys(entry).forEach((key) => {
 				const k = key as keyof IMDBProduct;
-				if (k === 'sourceImages' || k === 'rawVisionData' || k === 'fieldConfidence') return;
+				if (k === 'sourceImages' || k === 'rawVisionData' || k === 'fieldConfidence' || k === 'imageSide') return;
 				
 				const existingVal = existing[k];
 				const newVal = entry[k];
@@ -146,12 +160,16 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 				const existingConf = existing.fieldConfidence?.[k] ?? 0;
 				const newConf = entry.fieldConfidence?.[k] ?? 0;
 
-				// 1. AI Confidence Driven Merge
-				if (existingConf > 0 || newConf > 0) {
-					if (newConf > existingConf) {
+				// Apply side-label boost: if incoming or existing has a side that matches this field, boost its confidence
+				const boostedNewConf = newConf + getSideBoost((entry as any).imageSide, k as string);
+				const boostedExistingConf = existingConf + getSideBoost((existing as any).imageSide, k as string);
+
+				// 1. AI Confidence Driven Merge (with side boost)
+				if (boostedExistingConf > 0 || boostedNewConf > 0) {
+					if (boostedNewConf > boostedExistingConf) {
 						(existing[k] as any) = newVal;
 						if (!existing.fieldConfidence) existing.fieldConfidence = {};
-						existing.fieldConfidence[k] = newConf;
+						existing.fieldConfidence[k] = newConf; // store raw conf, boost is transient
 					}
 				} 
 				// 2. Length Heuristic Fallback

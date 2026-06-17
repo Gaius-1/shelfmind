@@ -425,11 +425,25 @@ export async function processJob(
                     // Overwrite imageTag with the deterministic watermark tag for correct grouping
                     extracted.imageTag = watermarkData.auditId + (watermarkData.productDescription ? " " + watermarkData.productDescription : "");
                     
+                    // Attach the side label (Front/Back/Left/Right/Barcode) for side-aware grouping
+                    if (watermarkData.side) {
+                        extracted.imageSide = watermarkData.side;
+                    }
+                    
                     if (!extracted.rawVisionData) extracted.rawVisionData = {};
                     extracted.rawVisionData[`${fileName}_watermark`] = watermarkData;
                     
                     anyWatermarkFound = true;
-                    await reporter.addLog("watermark", `[${fileName}] Applied deterministic watermark metadata overrides from tag ${watermarkData.auditId}`, "success");
+                    await reporter.addLog("watermark", `[${fileName}] Applied deterministic watermark metadata overrides from tag ${watermarkData.auditId}${watermarkData.side ? ` [${watermarkData.side}]` : ""}`, "success");
+                } else if (extracted.imageTag) {
+                    // Fallback: detect side from Qwen's imageTag if no physical watermark was found
+                    // The Qwen prompt instructs it to EXCLUDE side words, but in case it included one:
+                    const SIDE_RE = /\b(Front|Back|Left|Right|Top|Bottom|Barcode|First_Side|Second_Side|Side_1|Side_2)\b/i;
+                    const sideMatch = extracted.imageTag.match(SIDE_RE);
+                    if (sideMatch) {
+                        extracted.imageSide = sideMatch[1];
+                        extracted.imageTag = extracted.imageTag.replace(SIDE_RE, "").trim();
+                    }
                 }
 
                 // Attach the OCR text to the product so it saves to the DB later
@@ -443,7 +457,7 @@ export async function processJob(
                     await reporter.addLog("ocr", successMessage, "success");
                 }
                 rawExtractions.push(extracted);
-                await reporter.addLog("structured", `[${fileName}] Data extracted successfully by Qwen3-VL`, "success");
+                await reporter.addLog("structured", `[${fileName}] Data extracted successfully by Qwen3-VL${extracted.imageSide ? ` (${extracted.imageSide} side)` : ""}`, "success");
             } else {
                 await reporter.addLog("structured", `[${fileName}] Failed to extract data`, "error");
             }
@@ -456,16 +470,18 @@ export async function processJob(
         await reporter.updateNodeState("ocr", "completed");
         await reporter.updateEdgeState("e1", true, "#10b981");
 
-        // Watermark Parsing phase
+        // Watermark Parsing phase visual update
         await reporter.updateNodeState("watermark", "active");
         if (anyWatermarkFound) {
             await reporter.addLog("watermark", "Watermark tag override phase completed successfully", "success");
         } else {
-            await reporter.addLog("watermark", "No physical watermark tags detected", "info");
+            await reporter.addLog("watermark", "No physical watermark tags detected — side-aware grouping still active", "info");
         }
         await reporter.updateNodeState("watermark", "completed");
         await reporter.updateEdgeState("e_ocr", true, "#10b981");
 
+        // Structured Extraction phase visual update (was already run per-image inside the loop)
+        await reporter.updateNodeState("structured", "active");
         await reporter.updateNodeState("structured", "completed");
         await reporter.updateEdgeState("e_watermark", true, "#10b981");
 

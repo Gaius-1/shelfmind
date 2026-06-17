@@ -113,6 +113,7 @@ export interface IMDBProduct {
 	TAGLINE: string;
 	// Metadata for grouping and confidence
 	imageTag?: string;
+	imageSide?: string; // Parsed from watermark tag: "Front" | "Back" | "Left" | "Right" | "Barcode" | "Top" | "Bottom"
 	sourceImages: string[];
 	rawVisionData?: Record<string, any>;
 	fieldConfidence?: Record<string, number>;
