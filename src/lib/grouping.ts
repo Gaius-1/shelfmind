@@ -18,15 +18,17 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 
 	// Extracts the full audit ID token including any product-discriminator suffix.
 	// e.g. "GH000413316_A Kingsam..." → "GH000413316_A"
+	//      "GH000413316.A Kingsam..." → "GH000413316_A"   ← Normalized separator
 	//      "GH000413316_B Ena Pa..." → "GH000413316_B"   ← DIFFERENT product, must not merge
 	//      "GH0005109020 Kivo..."    → "GH0005109020"    ← no suffix, fuzzy OCR error handled separately
-	// IMPORTANT: Do NOT split on underscore — _A/_B are product discriminators, not delimiters.
+	// IMPORTANT: Do NOT split on underscore or dot-suffix.
 	const getBaseAuditId = (tag?: string): string => {
 		if (!tag) return "";
-		// Split only on whitespace and special separators — never on underscore
-		const firstToken = tag.trim().split(/[\s║|·•]+/)[0].toUpperCase().replace(/[,;:.]+$/, "");
-		if (/^[A-Z]{0,10}\d{3,}/i.test(firstToken)) {
-			return firstToken; // Keep full token including _A/_B suffix
+		const match = tag.trim().match(/^([A-Z]{0,10}\d{3,})(?:[_. -]([A-Z]))?(?:[^A-Z\d]|$)/i);
+		if (match) {
+			const mainId = match[1].toUpperCase();
+			const suffix = match[2] ? match[2].toUpperCase() : "";
+			return suffix ? `${mainId}_${suffix}` : mainId;
 		}
 		return "";
 	};

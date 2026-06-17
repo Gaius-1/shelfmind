@@ -96,4 +96,42 @@ describe("groupAndMergeImages", () => {
 		const result = await groupAndMergeImages([entry1, entry2]);
 		expect(result.length).toBe(1);
 	});
+
+	it("should merge products when one has a dot separator and the other has an underscore for the discriminator", async () => {
+		const entry1 = createMockProduct({
+			ITEM_NAME: "Kingsam Margarine",
+			BRAND: "KINGSAM",
+			imageTag: "GH000413316_A Kingsam Margarine Rich Butter Taste 250g sachet",
+			sourceImages: ["S229_1.jpg"],
+		});
+
+		const entry2 = createMockProduct({
+			ITEM_NAME: "Kingsam Margarine",
+			BRAND: "KINGSAM",
+			imageTag: "GH000413316.A",
+			sourceImages: ["S229_2.jpg"],
+		});
+
+		const result = await groupAndMergeImages([entry1, entry2]);
+		expect(result.length).toBe(1);
+	});
+
+	it("should merge products when one has a space or hyphen separator for the discriminator", async () => {
+		const entry1 = createMockProduct({
+			ITEM_NAME: "Sister Stew",
+			BRAND: "SISTER",
+			imageTag: "GH000413323-A Sister Stew 10g",
+			sourceImages: ["S230_1.jpg"],
+		});
+
+		const entry2 = createMockProduct({
+			ITEM_NAME: "Sister Stew",
+			BRAND: "SISTER",
+			imageTag: "GH000413323 A Sister Stew 10g",
+			sourceImages: ["S230_2.jpg"],
+		});
+
+		const result = await groupAndMergeImages([entry1, entry2]);
+		expect(result.length).toBe(1);
+	});
 });
