@@ -31,11 +31,12 @@ export function usePipelineStream(jobId: string) {
     queryKey: ['pipeline', jobId],
     queryFn: () => fetchInitialState(jobId),
     staleTime: Infinity, // State is driven by WebSockets, so don't auto-refetch
+    enabled: !!jobId, // Skip fetch when jobId is empty (non-live jobs on the queue page)
   })
 
   // 2. Setup Real WebSocket Listener
   useEffect(() => {
-    if (!data) return // Wait for initial fetch
+    if (!data || !jobId) return // Wait for initial fetch, skip if no jobId
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = `${protocol}//${window.location.host}/api/jobs/${jobId}/stream`
