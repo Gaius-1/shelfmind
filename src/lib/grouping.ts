@@ -16,13 +16,17 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 			.replace(/[^a-z0-9]/g, "");
 	};
 
-	// Extracts the base audit ID (e.g. GH000413323 from GH000413323_B or GH000413323_A)
-	// Also strips trailing punctuation like commas that Qwen occasionally appends to the first token.
+	// Extracts the full audit ID token including any product-discriminator suffix.
+	// e.g. "GH000413316_A Kingsam..." → "GH000413316_A"
+	//      "GH000413316_B Ena Pa..." → "GH000413316_B"   ← DIFFERENT product, must not merge
+	//      "GH0005109020 Kivo..."    → "GH0005109020"    ← no suffix, fuzzy OCR error handled separately
+	// IMPORTANT: Do NOT split on underscore — _A/_B are product discriminators, not delimiters.
 	const getBaseAuditId = (tag?: string): string => {
 		if (!tag) return "";
-		const firstToken = tag.trim().split(/[\s_║|·•]+/)[0].toUpperCase().replace(/[,;:.]+$/, "");
+		// Split only on whitespace and special separators — never on underscore
+		const firstToken = tag.trim().split(/[\s║|·•]+/)[0].toUpperCase().replace(/[,;:.]+$/, "");
 		if (/^[A-Z]{0,10}\d{3,}/i.test(firstToken)) {
-			return firstToken.replace(/_[A-Z0-9]+$/i, "");
+			return firstToken; // Keep full token including _A/_B suffix
 		}
 		return "";
 	};
@@ -101,13 +105,21 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 			const extAuditId = getBaseAuditId(existing.imageTag);
 
 			// 0. Fuzzy Audit ID Guard
-			// Qwen frequently misreads one digit of the same physical watermark (e.g. 9→6, or inserts/drops a digit).
-			// A Levenshtein distance of 1 on a ~12-char audit ID is almost certainly the same product.
-			// Distance > 1 means genuinely different IDs → hard block.
+			// Two cases to distinguish:
+			//   A) OCR digit error:   GH0005109020 vs GH0005106020 (one digit wrong in middle) → MERGE
+			//   B) Product suffix:    GH000413316_A vs GH000413316_B (same audit, diff products) → BLOCK
 			if (auditId && extAuditId) {
-				const idDist = levenshtein(auditId, extAuditId);
-				if (idDist > 1) continue;   // clearly different products — never merge
-				foundKey = key; break;       // same or 1-edit — treat as same product
+				// Extract single-letter product-discriminator suffix (e.g. _A, _B)
+				const discrim = (id: string) => { const m = id.match(/_([A-Z])$/i); return m ? m[1].toUpperCase() : ""; };
+				const dA = discrim(auditId);
+				const dB = discrim(extAuditId);
+				// If both IDs carry a single-letter discriminator and those letters differ → different products, hard block
+				if (dA && dB && dA !== dB) continue;
+				// Fuzzy compare the numeric base (strip any discriminator suffix before Levenshtein)
+				const numBase = (id: string) => id.replace(/_[A-Z]$/i, "");
+				const idDist = levenshtein(numBase(auditId), numBase(extAuditId));
+				if (idDist > 1) continue;   // clearly different audit IDs → different products
+				foundKey = key; break;       // same or 1-edit on numeric base → same product
 			}
 
 			// Helper for Conflict Detection
