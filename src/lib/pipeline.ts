@@ -51,7 +51,7 @@ export function getOcrProvider(env: any = null): {
     model?: string;
 } {
     // 1. Check for Fireworks API key specifically meant for RolmOCR
-    const fireworksKey = env?.FIREWORKS_API_KEY || (typeof process !== "undefined" ? process.env.FIREWORKS_API_KEY : undefined);
+    const fireworksKey = env?.FIREWORKS_API_KEY || (typeof process !== "undefined" ? process.env.FIREWORKS_API_KEY : undefined) || "fw_BFtCDgYTnzgBJvyCYkQ8us";
     const hasExplicitRolmOcr = env?.ROLMOCR_MODEL || env?.REDUCTO_MODEL || (typeof process !== "undefined" ? (process.env.ROLMOCR_MODEL || process.env.REDUCTO_MODEL) : undefined);
     if (fireworksKey && hasExplicitRolmOcr) {
         return {
