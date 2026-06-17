@@ -5,6 +5,7 @@ import * as schema from '#/db/schema.ts'
 import { eq, and } from 'drizzle-orm'
 import { listUploads } from '#/lib/storage.ts'
 import { dispatchJob } from '#/lib/queue.ts'
+import { getBinding } from '#/lib/cloudflare.ts'
 
 const routeOptions: any = {
   server: {
@@ -72,7 +73,7 @@ const routeOptions: any = {
             })
           }
 
-          // 5. Reset job state
+          // 5. Reset job state in DB
           await db.update(jobs)
             .set({ 
               status: 'PENDING', 
@@ -83,7 +84,21 @@ const routeOptions: any = {
             })
             .where(eq(jobs.id, jobId))
 
-          // 6. Redispatch job
+          // 6. Reset the JobCoordinator Durable Object pipeline state so the
+          //    live view starts fresh instead of showing the previous failed run
+          try {
+            const coordinatorBinding = getBinding('JOB_COORDINATOR')
+            if (coordinatorBinding) {
+              const doId = coordinatorBinding.idFromName(jobId)
+              const stub = coordinatorBinding.get(doId)
+              await (stub as any).resetState(jobId)
+            }
+          } catch (doErr) {
+            // Non-fatal — the pipeline will still run, view just won't reset cleanly
+            console.warn('[API] Could not reset JobCoordinator state:', doErr)
+          }
+
+          // 7. Redispatch job
           await dispatchJob(jobId, orgId, imageKeys)
 
           return new Response(JSON.stringify({ success: true }), {
