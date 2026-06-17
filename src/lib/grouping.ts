@@ -7,7 +7,24 @@ import type { IMDBProduct } from "../types/imdb.ts";
  * Primary grouping key is imageTag, fallback to BARCODE.
  */
 export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promise<IMDBProduct[]> {
-	const normalizeStr = (s?: string) => (s ? s.toLowerCase().replace(/[^a-z0-9]/g, "") : "");
+	const normalizeStr = (s?: string) => {
+		if (!s) return "";
+		return s
+			.normalize("NFD")
+			.replace(/[\u0300-\u036f]/g, "")
+			.toLowerCase()
+			.replace(/[^a-z0-9]/g, "");
+	};
+
+	// Extracts the base audit ID (e.g. GH000413323 from GH000413323_B or GH000413323_A)
+	const getBaseAuditId = (tag?: string): string => {
+		if (!tag) return "";
+		const firstToken = tag.trim().split(/[\s_║|·•]+/)[0].toUpperCase();
+		if (/^[A-Z]{0,10}\d{3,}/i.test(firstToken)) {
+			return firstToken.replace(/_[A-Z0-9]+$/i, "");
+		}
+		return "";
+	};
 	
 	// Advanced normalizer specifically for image tags to strip out photographer suffixes
 	const normalizeTag = (s?: string) => {
@@ -71,6 +88,7 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 		const barcode = normalizeStr(entry.BARCODE);
 		const name = normalizeStr(entry.ITEM_NAME);
 		const brand = normalizeStr(entry.BRAND);
+		const auditId = getBaseAuditId(entry.imageTag);
 
 		// Look for an existing group that matches ANY of these critical fields
 		let foundKey: string | null = null;
@@ -79,13 +97,27 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 			const extBarcode = normalizeStr(existing.BARCODE);
 			const extName = normalizeStr(existing.ITEM_NAME);
 			const extBrand = normalizeStr(existing.BRAND);
+			const extAuditId = getBaseAuditId(existing.imageTag);
+
+			// 0. Hard Block: Different non-empty audit IDs must NEVER be grouped together
+			if (auditId && extAuditId && auditId !== extAuditId) {
+				continue;
+			}
+
+			// 0.5. Hard Merge: Same non-empty audit ID must ALWAYS be grouped together
+			if (auditId && extAuditId && auditId === extAuditId) {
+				foundKey = key;
+				break;
+			}
 
 			// Helper for Conflict Detection
 			const hasBarcodeConflict = barcode && extBarcode && barcode.length > 8 && extBarcode.length > 8 
 				? levenshtein(barcode, extBarcode) > 2 
 				: (barcode && extBarcode && barcode !== extBarcode);
 				
-			const hasBrandConflict = brand && extBrand && brand !== extBrand;
+			const hasBrandConflict = brand && extBrand && brand !== extBrand
+				? !(brand.includes(extBrand) || extBrand.includes(brand) || brand.length <= 2 || extBrand.length <= 2)
+				: false;
 
 			const isSafeSubstringMatch = (n: string, extN: string) => {
 				if (n === extN) return true;
