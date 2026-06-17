@@ -2,7 +2,7 @@
 
 ## About the Project
 
-ShelfMind is a full-stack AI-powered image-to-item master data tool built for retail teams at the GDSS-Maverick Hackathon. A field agent photographs a product, uploads it through the web interface, and ShelfMind's hybrid extraction pipeline automatically reads the image using three parallel methods — deterministic barcode scanning (ZXing), OCR label extraction, and vision AI classification (Qwen2.5-VL via Cloudflare Workers AI) — to fill all 13 Item Master Database (IMDB) columns with per-field confidence scores. The user reviews the extracted records, edits any flagged fields, and exports a clean Excel or CSV file ready for database upload.
+ShelfMind is a full-stack AI-powered image-to-item master data tool built for retail teams at the GDSS-Maverick Hackathon. A field agent photographs a product, uploads it through the web interface, and ShelfMind's hybrid extraction pipeline automatically reads the image using a multi-stage approach — deterministic watermark tag parsing, AI background removal, OCR transcription (RolmOCR via Fireworks AI or Google Vision), and vision AI classification (Qwen3-VL via Fireworks AI) — to fill all 13 Item Master Database (IMDB) columns with per-field confidence scores. The user reviews the extracted records, edits any flagged fields, and exports a clean Excel or CSV file ready for database upload.
 
 ShelfMind is built as a multi-tenant SaaS. Each organisation has its own isolated workspace — members, jobs, IMDB records, and exports are all scoped to an organisation. Users can belong to multiple organisations and switch between them from the workspace switcher in the top-right of the app shell.
 
@@ -14,7 +14,7 @@ Every step runs entirely on Cloudflare's infrastructure: Workers handle the API,
 
 Retail teams fill the Item Master Database manually by transcribing data from product images and labels. This causes inconsistencies, duplicated entries, and slow cataloging — especially for field teams working across hundreds of SKUs. A product that takes a human 5–10 minutes to research and enter manually takes ShelfMind under 30 seconds.
 
-ShelfMind eliminates that manual transcription work entirely. The pipeline pre-processes raw images at the edge, reads the barcode deterministically, extracts text from every label panel, classifies packaging and category using a vision model, and merges all three signals into a single confident record. The user just reviews, edits any flagged fields, and exports. The resulting file drops straight into any product master database or ERP import flow.
+ShelfMind eliminates that manual transcription work entirely. The pipeline strips the shelf background from every image before running OCR — so neighbor products on the shelf no longer corrupt the extraction. A physical watermark tag printed on each audit photo provides a deterministic audit identity and product description override, anchoring the grouping logic to ground truth rather than AI inference. Qwen3-VL then reads the clean, isolated product surface and maps the label text to the full 13-column IMDB schema. The user just reviews, edits any flagged fields, and exports.
 
 ---
 
@@ -141,21 +141,42 @@ member  → can upload, review, and export within the organisation
 * Clicking an active job → routes to the Pipeline Visualizer to watch the execution live
 * Clicking a completed job → routes to Review Queue filtered to that job
 
-### Extraction Pipeline — Hybrid Approach
+### Extraction Pipeline — Multi-Stage Approach
 
-* Processing Worker consumes the queue message and reads images from R2.
-* **Image Preprocessing:** Raw images are passed through Cloudflare's Image Resizing (`cf.image`) to downscale, convert to WebP, and apply sharpening (restoring text/barcode edge contrast) before inference. In local dev, `cf.image` is bypassed; raw buffers go directly to ZXing and mock AI.
-* **Stateful Observability:** As the Queue processes each image, it emits non-blocking RPC events to the `JobCoordinator` Durable Object, which broadcasts the live state via WebSockets to the frontend visualizer.
-* Three extractors run in parallel on each optimized image:
-  * **ZXing** — deterministic barcode scan; never uses an AI model for barcode values
-  * **Workers AI (text model)** — OCR extraction of all label text panels
-  * **Workers AI Vision (Qwen2.5-VL)** — classifies packaging type, category type, segment type, brand, manufacturer, country of origin, and promotional messages
-* KV is checked before every Workers AI call; cache hit skips the model entirely
-* A Merge + Confidence engine combines the three outputs into a single record per product
-* Each field carries `{ value, source, confidence }` — fields where two extractors agree get high confidence; missing or conflicting fields are flagged for human review
-* The normalization layer (`lib/normalization.ts`) standardizes weight formats, strips secondary languages (e.g., dual English/French labels common in West Africa), and normalizes packaging names before the record is written
-* **Post-Job Duplicate Detection:** After all records for a job are written, the pipeline queries existing `ACTIVE` records for the same org and compares by barcode match and normalized brand+weight similarity. Matching pairs are inserted into the `duplicate_pairs` table with a `PENDING` status for human review.
-* The merged record is written to D1 scoped to `organisation_id`; job status updates to `COMPLETED` or `FAILED`
+The pipeline is a sequential, multi-stage process that runs in a Cloudflare Queue consumer. For each image in the batch:
+
+**Stage 1 — OCR on Original Image (Watermark Detection)**
+* The raw R2 buffer is base64-encoded and sent to RolmOCR (via Fireworks AI) or Google Vision
+* The full-image OCR text is scanned line-by-line for a physical watermark tag pattern (e.g. `AUD-2024-001 Coca-Cola Classic 330ml`)
+* If no watermark is found, the pipeline performs a **multi-margin crop fallback** — it systematically crops and re-OCRs all four edges (bottom → top → left → right) of the original buffer until the tag is located
+* The watermark tag, if found, provides a deterministic `auditId`, `productDescription`, `weight`, `side` (Front/Back/Left/Right/Barcode), `manufacturer`, `country`, and `packaging` — all of which override Qwen3-VL's extracted values for those fields
+
+**Stage 2 — Background Removal**
+* After watermark extraction (which requires the original edges to be intact), the original buffer is passed to `removeBackground()` via the Cloudflare Images binding (`env.IMAGES`)
+* Cloudflare Images applies BiRefNet AI segmentation: `segment: "foreground"`, `background: "white"`, `format: "jpeg"`, `quality: 95`
+* The result is a `cleanBuffer` — the product isolated on a clean white background, with all shelf/store noise stripped
+* If the binding is unavailable or the transform fails, `cleanBuffer` gracefully falls back to the original buffer
+* A second OCR pass is run on `cleanBuffer` — if it returns richer text than the first pass, it replaces the original OCR for field extraction
+
+**Stage 3 — Qwen3-VL Extraction (Cognition)**
+* `cleanBuffer` (background-removed image) is sent to Qwen3-VL via Fireworks AI
+* Qwen maps the clean product label text to the full 13-column IMDB JSON schema
+* Watermark tag overrides are then applied on top of Qwen's output for maximum accuracy
+
+**Stage 4 — Grouping & Aggregation**
+* All per-image extractions are grouped by `imageTag` (from the watermark) or `BARCODE`
+* Grouping uses strict brand conflict and barcode conflict guards to prevent cross-contamination between distinct products
+* **Side-Label Intelligence:** Each extraction carries an `imageSide` field (Front/Back/Left/Right/Barcode/Top/Bottom) parsed from the watermark tag suffix. During field aggregation, the grouping engine applies a confidence boost (+0.10 for Front/Back on their canonical fields, +0.15 for Barcode on the `BARCODE` field) — Front images win ITEM_NAME/BRAND/WEIGHT/VARIANT/TAGLINE, Back images win MANUFACTURER/COUNTRY/ADDONS/PROMOTION
+* The normalization layer (`lib/normalization.ts`) standardizes weight formats, strips secondary languages (e.g., dual English/French labels common in West Africa), and normalizes packaging names
+
+**Stage 5 — Database Write**
+* Merged records are written to `imdb_records` in D1, scoped to `organisation_id`
+
+**Stage 6 — Post-Job Duplicate Detection**
+* After all records are written, the pipeline compares new records against existing `ACTIVE` records for the same org by barcode match and normalized brand+weight similarity
+* Matching pairs are inserted into `duplicate_pairs` with `status = 'PENDING'` for human review
+
+**Observability:** As each stage runs, the pipeline emits non-blocking RPC events to the `JobCoordinator` Durable Object, which broadcasts live state via WebSockets to the Pipeline Visualizer. The visualizer shows 8 nodes: Image Ingestion → RolmOCR → Watermark Parsing → BG Removal → Qwen3-VL Extraction → Map-based Grouping → Database Write → Merge Suggestions.
 
 ### Review Queue
 
@@ -272,8 +293,8 @@ Every piece of data in ShelfMind is scoped to an organisation. The tenancy bound
 
 ### Extraction Cache
 
-* Workers AI results cached in KV keyed by `ai:{orgId}:{imageHash}`
-* Cache hit skips the Workers AI call entirely — zero AI cost on re-processed images
+* AI results cached in KV keyed by `ai:{orgId}:{imageHash}`
+* Cache hit skips the AI call entirely — zero AI cost on re-processed images
 * TTL: 7 days
 
 ### Images
@@ -293,11 +314,12 @@ Every piece of data in ShelfMind is scoped to an organisation. The tenancy bound
 | Backend | Cloudflare Workers |
 | Queue | Cloudflare Queues |
 | Image storage | Cloudflare R2 |
-| Image preprocessing | Cloudflare Image Resizing (`cf.image`) |
+| Image preprocessing | Cloudflare Images binding (`env.IMAGES`) — background removal + margin cropping |
+| Background removal | Cloudflare Images `segment: "foreground"` (BiRefNet AI) |
+| OCR | RolmOCR via Fireworks AI (primary) / Google Vision (fallback) |
+| Vision extraction | Qwen3-VL via Fireworks AI |
 | Database | Cloudflare D1 |
 | Cache | Cloudflare KV |
-| Barcode scanning | ZXing (deterministic) |
-| Vision + OCR | Workers AI — Qwen2.5-VL |
 | Export generation | ExcelJS |
 
 ---
@@ -315,22 +337,24 @@ Every piece of data in ShelfMind is scoped to an organisation. The tenancy bound
 * Batch image upload (up to 20 images) with drag-and-drop
 * R2 image storage namespaced by org and job
 * Cloudflare Queues async processing with retry and DLQ
-* **Edge-Native Preprocessing:** Image resizing, WebP conversion, and sharpening via Cloudflare Worker `cf.image` binding. Bypassed in local dev.
-* Hybrid extraction pipeline: ZXing barcode + Workers AI OCR + Workers AI Vision (Qwen2.5-VL) running in parallel
-* KV caching of AI results namespaced by org and image hash
-* Merge + Confidence engine: per-field `{ value, source, confidence }` output
-* **Local Market Normalization:** Regex logic mapped to extract primary English values from bilingual wrappers and correctly normalize non-standard weights.
-* **Weight/Volume Grouping Blocker:** Products with identical names but different weights/volumes are forced into separate IMDB records — never merged.
+* **Physical Watermark Tag Parsing:** Deterministic extraction of audit identity, product description, weight, side, manufacturer, and country from a printed tag on each audit photo. Overrides Qwen3-VL values for maximum accuracy.
+* **Multi-Margin Watermark Fallback:** If the watermark tag is not found in full-image OCR, the pipeline systematically crops and re-OCRs all four edges (bottom → top → left → right) of the original image.
+* **AI Background Removal:** Cloudflare Images BiRefNet segmentation strips the shelf/store environment from every product image before OCR and Qwen inference, preventing neighbor-product label contamination. Applied after watermark extraction so edge tags are preserved.
+* **Side-Label Intelligence:** Each extraction carries an `imageSide` field (Front/Back/Left/Right/Barcode) parsed from the watermark tag. During grouping aggregation, a confidence boost (+0.10/+0.15) is applied per field based on which side canonically owns that data — Front wins on BRAND/ITEM_NAME, Back wins on MANUFACTURER/COUNTRY, Barcode side wins on BARCODE.
+* OCR extraction via RolmOCR (Fireworks AI) or Google Vision, configurable per org
+* Vision AI extraction via Qwen3-VL (Fireworks AI) — maps clean product label to full 13-column IMDB schema
+* **Brand Conflict and Barcode Conflict Guards:** Strict grouping invariants in `lib/grouping.ts` using `hasBrandConflict` and `hasBarcodeConflict` — prevent distinct products from being merged into a single record
+* **Local Market Normalization:** Regex logic mapped to extract primary English values from bilingual wrappers and correctly normalize non-standard weights
+* **Weight/Volume Grouping Blocker:** Products with identical names but different weights/volumes are forced into separate IMDB records — never merged
 * Processing Queue page with live job status polling
-* Real-time Pipeline Visualizer using React Flow, Durable Objects, and WebSockets to observe the async pipeline executing
+* **Real-time Pipeline Visualizer** using React Flow, Durable Objects, and WebSockets — 8 nodes: Image Ingestion → RolmOCR → Watermark Parsing → BG Removal → Qwen3-VL Extraction → Map-based Grouping → Database Write → Merge Suggestions
 * Review Queue with filter, sort, inline edit, and confidence indicators
 * Individual record detail page with full extraction evidence panel
 * Product Repository — cross-job searchable master record table (active records only)
-* **Pre-Calculated Duplicate Detection:** Pairs detected asynchronously at end of each job, stored in `duplicate_pairs` table, with side-by-side review UI.
-* **Soft-Deletion with Merge Lineage:** Records are never hard-deleted. Merged duplicates retain `merged_into_id` pointing to the surviving parent for full MDM auditability.
+* **Pre-Calculated Duplicate Detection:** Pairs detected asynchronously at end of each job, stored in `duplicate_pairs` table, with side-by-side review UI
+* **Soft-Deletion with Merge Lineage:** Records are never hard-deleted. Merged duplicates retain `merged_into_id` pointing to the surviving parent for full MDM auditability
 * Export to Excel (.xlsx via ExcelJS), CSV, and JSON, scoped to active organisation (active records only)
 * Export history with signed R2 download links
-* Signed R2 download URLs for exports
 * Dashboard with stats bar, recent activity feed, and three analytics charts — all org-scoped
 * Per-image and per-field confidence scoring throughout
 * All API routes enforce organisation scoping from session — never from user input
@@ -352,7 +376,7 @@ Every piece of data in ShelfMind is scoped to an organisation. The tenancy bound
 * Separate analytics page — charts live on dashboard
 * Real-time agent feed or live browser embed
 * LinkedIn or external marketplace integration
-* Multi-Agent Orchestration — Pipeline relies on optimized parallel single-turn extraction.
+* Multi-Agent Orchestration — Pipeline relies on optimized parallel single-turn extraction
 
 ---
 
@@ -364,9 +388,8 @@ Cloudflare Queues    → Async job dispatch with retry + DLQ
 Cloudflare R2        → Image storage + export file storage (namespaced by org)
 Cloudflare D1        → IMDB records, jobs, duplicate pairs, organisation profiles (all org-scoped)
 Cloudflare KV        → AI result cache (7-day TTL, keyed by org + image hash)
-Durable Objects      → Stateful observability (`JobCoordinator`) broadcasting pipeline updates via WebSockets
-Workers AI           → Qwen2.5-VL vision + OCR extraction
-cf.image             → Edge-native image compression and sharpening
+Durable Objects      → Stateful observability (JobCoordinator) broadcasting pipeline updates via WebSockets
+Cloudflare Images    → Background removal (segment: foreground, BiRefNet AI) + margin cropping for watermark detection
 ```
 
 ---
@@ -385,6 +408,8 @@ Each extracted field carries a confidence object (canonical type defined in `src
 
 The merged record's overall confidence is a **weighted mean** using `FIELD_WEIGHTS` from `src/types/imdb.ts` (barcode: 1.0, item name: 0.9, brand: 0.85, etc.). Records with overall confidence below 0.75 are surfaced first in the Review Queue and marked "Needs Review." Fields with confidence below 0.3 are set to empty string — ShelfMind never hallucates values.
 
+During side-aware grouping, confidence is transiently boosted (+0.10 for canonical Front/Back fields, +0.15 for Barcode) to determine merge priority. The stored confidence in D1 always reflects the raw extracted value — the boost is never persisted.
+
 ---
 
 ## IMDB Columns
@@ -392,19 +417,23 @@ The merged record's overall confidence is a **weighted mean** using `FIELD_WEIGH
 All 13 columns extracted per product (canonical order from `src/types/imdb.ts`):
 
 ```text
-ITEM_NAME           → OCR + Vision merged
-BARCODE             → ZXing (primary) → Vision fallback
-MANUFACTURER        → OCR + Vision merged
-BRAND               → OCR + Vision merged
-WEIGHT              → OCR (regex validated) + Vision, normalized (e.g. "500 Grams" → "500g")
-PACKAGING_TYPE      → Vision AI, normalized (e.g. "hdpe bottle" → "Bottle")
-COUNTRY             → OCR + Vision merged, normalized (e.g. "za" → "South Africa")
-VARIANT             → Vision AI
-TYPE                → Vision AI
-FRAGRANCE_FLAVOR    → OCR + Vision merged
-PROMOTION           → OCR + Vision merged
-ADDONS              → OCR + Vision merged
-TAGLINE             → OCR + Vision merged
+ITEM_NAME           → Watermark tag (primary) → Qwen3-VL → OCR merged
+BARCODE             → Barcode-side watermark → Qwen3-VL fallback
+MANUFACTURER        → Watermark tag (primary) → Qwen3-VL → OCR merged
+BRAND               → Qwen3-VL (Front-side priority) → OCR merged
+WEIGHT              → Watermark tag (primary) → OCR (regex validated) → Qwen3-VL, normalized
+PACKAGING_TYPE      → Watermark tag → Qwen3-VL normalized (e.g. "hdpe bottle" → "Bottle")
+COUNTRY             → Watermark tag (primary) → Qwen3-VL → OCR merged, normalized
+VARIANT             → Qwen3-VL (Front-side priority)
+TYPE                → Qwen3-VL
+FRAGRANCE_FLAVOR    → Qwen3-VL → OCR merged
+PROMOTION           → Qwen3-VL (Back-side priority) → OCR merged
+ADDONS              → Qwen3-VL (Back-side priority) → OCR merged
+TAGLINE             → Qwen3-VL (Front-side priority) → OCR merged
 ```
 
-The canonical TypeScript type for the full 13-column record, field confidence metadata, weighted confidence constants, and export column ordering lives in `src/types/imdb.ts` — the single source of truth imported by `db/schema.ts`, `lib/pipeline.ts`, `lib/export.ts`, `lib/normalization.ts`, and review UI components.
+Additionally, each `IMDBProduct` carries two metadata fields used only during pipeline processing and never exported:
+- `imageSide?: string` — the watermark side (Front/Back/Left/Right/Barcode)
+- `imageTag?: string` — the deterministic group key derived from the watermark auditId
+
+The canonical TypeScript type for the full 13-column record, field confidence metadata, weighted confidence constants, and export column ordering lives in `src/types/imdb.ts` — the single source of truth imported by `db/schema.ts`, `lib/pipeline.ts`, `lib/export.ts`, `lib/normalization.ts`, `lib/grouping.ts`, and review UI components.
