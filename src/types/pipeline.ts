@@ -32,7 +32,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 	{
 		id: "ocr",
 		type: "customNode",
-		position: { x: 350, y: 250 },
+		position: { x: 320, y: 250 },
 		data: {
 			title: "RolmOCR Transcription",
 			description: "Perception: High-fidelity document text extraction.",
@@ -44,7 +44,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 	{
 		id: "watermark",
 		type: "customNode",
-		position: { x: 650, y: 250 },
+		position: { x: 590, y: 250 },
 		data: {
 			title: "Watermark Parsing",
 			description: "Extract and apply physical barcode tag overrides.",
@@ -54,9 +54,21 @@ export const initialNodes: Node<CustomNodeData>[] = [
 		},
 	},
 	{
+		id: "bgremoval",
+		type: "customNode",
+		position: { x: 860, y: 250 },
+		data: {
+			title: "BG Removal",
+			description: "AI segmentation isolates product from shelf background.",
+			iconType: "vision",
+			badge: "AI",
+			status: "pending",
+		},
+	},
+	{
 		id: "structured",
 		type: "customNode",
-		position: { x: 950, y: 250 },
+		position: { x: 1130, y: 250 },
 		data: {
 			title: "Qwen3-VL Extraction",
 			description: "Cognition: Maps OCR text to JSON schema.",
@@ -67,7 +79,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 	{
 		id: "grouping",
 		type: "customNode",
-		position: { x: 1250, y: 250 },
+		position: { x: 1400, y: 250 },
 		data: {
 			title: "Map-based Grouping",
 			description: "Merges records by imageTag or BARCODE.",
@@ -78,7 +90,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 	{
 		id: "database",
 		type: "customNode",
-		position: { x: 1550, y: 250 },
+		position: { x: 1670, y: 250 },
 		data: {
 			title: "Database Write",
 			description: "Inserts merged records to SQLite.",
@@ -89,7 +101,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 	{
 		id: "deduplication",
 		type: "customNode",
-		position: { x: 1850, y: 250 },
+		position: { x: 1940, y: 250 },
 		data: {
 			title: "Merge Suggestions",
 			description: "Post-job scan for duplicate pairs.",
@@ -117,8 +129,16 @@ export const initialEdges: Edge[] = [
 		style: { strokeWidth: 2 },
 	},
 	{
-		id: "e_watermark",
+		id: "e_watermark_bg",
 		source: "watermark",
+		target: "bgremoval",
+		animated: false,
+		type: "smoothstep",
+		style: { strokeWidth: 2 },
+	},
+	{
+		id: "e_bg_structured",
+		source: "bgremoval",
 		target: "structured",
 		animated: false,
 		type: "smoothstep",

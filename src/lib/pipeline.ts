@@ -202,6 +202,36 @@ async function cropImageMargin(
 	}
 }
 
+/**
+ * Removes the shelf/store background from a product photo using Cloudflare Images
+ * AI segmentation (BiRefNet). Returns a clean white-background JPEG buffer.
+ * Falls back to the original buffer if the binding is unavailable or fails.
+ * MUST be called AFTER watermark margin crops — edges are treated as background.
+ */
+async function removeBackground(
+	buffer: ArrayBuffer,
+	env: any = null,
+): Promise<ArrayBuffer> {
+	if (!env || !env.IMAGES) return buffer;
+	try {
+		const transformed = env.IMAGES.transform(new Response(buffer), {
+			segment: "foreground",
+			background: "white", // solid white — better contrast for OCR than transparent
+			format: "jpeg",
+			quality: 95,
+		});
+		const result = await transformed.arrayBuffer();
+		if (!result || result.byteLength === 0) {
+			console.warn("[Pipeline] Background removal returned empty buffer, using original.");
+			return buffer;
+		}
+		return result;
+	} catch (e) {
+		console.error("[Pipeline] Background removal failed, using original:", e);
+		return buffer;
+	}
+}
+
 async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrText: string, env: any = null): Promise<IMDBProduct | null> {
     const base64Image = Buffer.from(imageBuffer).toString("base64");
     
@@ -355,14 +385,16 @@ export async function processJob(
                 return;
             }
 
-            const base64Image = Buffer.from(buffer).toString("base64");
-            
-            // Step 1: Perception (OCR)
+            // Step 0.5: Quick OCR pass on original buffer for watermark tag detection
+            // (must use original buffer — edges contain the watermark text)
+            const base64Original = Buffer.from(buffer).toString("base64");
+
+            // Step 1: Perception (OCR) — on original to capture edge watermark text
             let ocrText = "";
             if (ocrConfig.provider === "rolmocr") {
-                ocrText = await extractWithRolmOCR(base64Image, env, reporter, fileName);
+                ocrText = await extractWithRolmOCR(base64Original, env, reporter, fileName);
             } else if (ocrConfig.provider === "google") {
-                ocrText = await extractWithGoogleVision(base64Image, env, reporter, fileName);
+                ocrText = await extractWithGoogleVision(base64Original, env, reporter, fileName);
             }
 
             // Step 1.5: Deterministic Watermark Parsing
@@ -412,8 +444,29 @@ export async function processJob(
                 }
             }
 
-            // Step 2: Cognition (Qwen3-VL)
-            const extracted = await extractWithQwen(buffer, fileName, ocrText, env);
+            // Step 1.8: Background Removal — AFTER watermark extraction, BEFORE Qwen/OCR cognition
+            // Original buffer edges (watermark) are safe. cleanBuffer feeds all subsequent AI steps.
+            const cleanBuffer = await removeBackground(buffer, env);
+            await reporter.addLog("bgremoval", `[${fileName}] Product isolated from shelf background`, "success");
+
+            // Re-run OCR on the clean buffer for better field text accuracy (less neighbor-label noise)
+            if (env?.IMAGES && ocrConfig.provider !== "none") {
+                const base64Clean = Buffer.from(cleanBuffer).toString("base64");
+                let cleanOcr = "";
+                if (ocrConfig.provider === "rolmocr") {
+                    cleanOcr = await extractWithRolmOCR(base64Clean, env, null, `${fileName}_clean`);
+                } else if (ocrConfig.provider === "google") {
+                    cleanOcr = await extractWithGoogleVision(base64Clean, env, null, `${fileName}_clean`);
+                }
+                // Merge: prefer clean OCR if it returned more content, otherwise keep original
+                if (cleanOcr && cleanOcr.length > ocrText.length) {
+                    ocrText = cleanOcr;
+                    await reporter.addLog("bgremoval", `[${fileName}] Clean OCR produced richer text — using background-removed result`, "success");
+                }
+            }
+
+            // Step 2: Cognition (Qwen3-VL) — receives clean background-removed buffer
+            const extracted = await extractWithQwen(cleanBuffer, fileName, ocrText, env);
             if (extracted) {
                 if (watermarkData) {
                     if (watermarkData.productDescription) extracted.ITEM_NAME = watermarkData.productDescription;
@@ -480,10 +533,16 @@ export async function processJob(
         await reporter.updateNodeState("watermark", "completed");
         await reporter.updateEdgeState("e_ocr", true, "#10b981");
 
+        // BG Removal phase visual update
+        await reporter.updateNodeState("bgremoval", "active");
+        await reporter.addLog("bgremoval", `Background removal applied to all ${imageKeys.length} images`, "success");
+        await reporter.updateNodeState("bgremoval", "completed");
+        await reporter.updateEdgeState("e_watermark_bg", true, "#10b981");
+
         // Structured Extraction phase visual update (was already run per-image inside the loop)
         await reporter.updateNodeState("structured", "active");
         await reporter.updateNodeState("structured", "completed");
-        await reporter.updateEdgeState("e_watermark", true, "#10b981");
+        await reporter.updateEdgeState("e_bg_structured", true, "#10b981");
 
         await reporter.updateNodeState("grouping", "active");
         await reporter.addLog("grouping", `Grouping ${rawExtractions.length} extractions...`, "info");
