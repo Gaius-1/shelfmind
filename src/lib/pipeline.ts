@@ -177,26 +177,47 @@ async function cropImageMargin(
 		return buffer;
 	}
 	try {
-		const options: any = { fit: "crop" };
+		// Step 1: Crop the edge strip.
+		// • Gravity anchored to the ACTUAL edge (y=1.0 for bottom, y=0.0 for top, etc.)
+		//   so the watermark printed right at the image border is always included.
+		// • 480px deep (doubled from 240px) — wider net so the full watermark text fits.
+		const cropOptions: any = { fit: "crop", format: "jpeg", quality: 95 };
 		if (margin === "bottom") {
-			options.gravity = { x: 0.5, y: 0.95 };
-			options.width = 1600;
-			options.height = 240;
+			cropOptions.gravity = { x: 0.5, y: 1.0 }; // anchor to very bottom edge
+			cropOptions.width = 1600;
+			cropOptions.height = 480;
 		} else if (margin === "top") {
-			options.gravity = { x: 0.5, y: 0.05 };
-			options.width = 1600;
-			options.height = 240;
+			cropOptions.gravity = { x: 0.5, y: 0.0 }; // anchor to very top edge
+			cropOptions.width = 1600;
+			cropOptions.height = 480;
 		} else if (margin === "left") {
-			options.gravity = { x: 0.05, y: 0.5 };
-			options.width = 240;
-			options.height = 1600;
+			cropOptions.gravity = { x: 0.0, y: 0.5 }; // anchor to very left edge
+			cropOptions.width = 480;
+			cropOptions.height = 1600;
 		} else if (margin === "right") {
-			options.gravity = { x: 0.95, y: 0.5 };
-			options.width = 240;
-			options.height = 1600;
+			cropOptions.gravity = { x: 1.0, y: 0.5 }; // anchor to very right edge
+			cropOptions.width = 480;
+			cropOptions.height = 1600;
 		}
-		const transformed = env.IMAGES.transform(new Response(buffer), options);
-		return await transformed.arrayBuffer();
+		const croppedTransform = env.IMAGES.transform(new Response(buffer), cropOptions);
+		const croppedBuffer = await croppedTransform.arrayBuffer();
+		if (!croppedBuffer || croppedBuffer.byteLength === 0) return buffer;
+
+		// Step 2: Upscale the cropped strip 2×.
+		// At 480px strip height the watermark characters are ~20px tall.
+		// At 2× upscale (960px) they become ~40px — well within the reliable range
+		// for both Google Vision DOCUMENT_TEXT_DETECTION and RolmOCR.
+		const isHorizontal = margin === "top" || margin === "bottom";
+		const upscaleTransform = env.IMAGES.transform(new Response(croppedBuffer), {
+			width: isHorizontal ? 3200 : 960,
+			height: isHorizontal ? 960 : 3200,
+			fit: "contain",
+			format: "jpeg",
+			quality: 95,
+		});
+		const upscaledBuffer = await upscaleTransform.arrayBuffer();
+		if (!upscaledBuffer || upscaledBuffer.byteLength === 0) return croppedBuffer;
+		return upscaledBuffer;
 	} catch (e) {
 		console.error(`[Pipeline] Image crop for margin ${margin} failed:`, e);
 		return buffer;
@@ -384,66 +405,67 @@ export async function processJob(
             if (!buffer) {
                 await reporter.addLog("upload", `Could not load image: ${fileName}`, "error");
                 return;
-            }
+            }			// Step 1: Dedicated watermark scan — crop each edge at high resolution FIRST.
+			// The watermark is printed in small text on the image border. Running OCR on
+			// an edge-anchored 480px strip upscaled 2× (to 960px) gives OCR engines ~40px
+			// character height, which is well within reliable read range.
+			// We do this BEFORE the full-image OCR pass so the cleanest possible crop
+			// feeds watermark detection — not as a last resort.
+			let watermarkData: any = null;
+			if (env?.IMAGES && ocrConfig.provider !== "none") {
+				const margins: ("bottom" | "top" | "left" | "right")[] = ["bottom", "top", "left", "right"];
+				for (const margin of margins) {
+					try {
+						const croppedBuffer = await cropImageMargin(buffer, margin, env);
+						if (croppedBuffer === buffer) continue; // crop failed, skip
+						const croppedBase64 = Buffer.from(croppedBuffer).toString("base64");
+						let croppedOcr = "";
+						if (ocrConfig.provider === "rolmocr") {
+							croppedOcr = await extractWithRolmOCR(croppedBase64, env, null, `${fileName}_${margin}`);
+						} else if (ocrConfig.provider === "google") {
+							croppedOcr = await extractWithGoogleVision(croppedBase64, env, null, `${fileName}_${margin}`);
+						}
+						if (croppedOcr) {
+							for (const line of croppedOcr.split('\n')) {
+								const parsed = parseWatermark(line);
+								if (parsed?.auditId) {
+									watermarkData = parsed;
+									await reporter.addLog("watermark", `[${fileName}] Watermark found on ${margin} edge (480px×2× crop): ${parsed.auditId}`, "success");
+									break;
+								}
+							}
+						}
+					} catch (cropErr) {
+						console.error(`[Pipeline] Margin crop flow failed for ${margin}:`, cropErr);
+					}
+					if (watermarkData) break;
+				}
+				if (!watermarkData) {
+					await reporter.addLog("watermark", `[${fileName}] No watermark found in any edge crop — will fall back to Qwen imageTag`, "info");
+				}
+			}
 
-            // Step 0.5: Quick OCR pass on original buffer for watermark tag detection
-            // (must use original buffer — edges contain the watermark text)
-            const base64Original = Buffer.from(buffer).toString("base64");
-
-            // Step 1: Perception (OCR) — on original to capture edge watermark text
-            let ocrText = "";
+			// Step 2: Full-image OCR for product field extraction.
+			// Also used as a secondary watermark source if the edge crop missed it.
+			const base64Original = Buffer.from(buffer).toString("base64");
+			let ocrText = "";
             if (ocrConfig.provider === "rolmocr") {
                 ocrText = await extractWithRolmOCR(base64Original, env, reporter, fileName);
             } else if (ocrConfig.provider === "google") {
                 ocrText = await extractWithGoogleVision(base64Original, env, reporter, fileName);
             }
 
-            // Step 1.5: Deterministic Watermark Parsing
-            let watermarkData: any = null;
-            if (ocrText) {
-                const lines = ocrText.split('\n');
-                for (const line of lines) {
-                    const parsed = parseWatermark(line);
-                    if (parsed && parsed.auditId) {
-                        watermarkData = parsed;
-                        break;
-                    }
-                }
-            }
-
-            // Fallback: Multi-margin cropping if watermark wasn't found in full OCR
-            if (!watermarkData && env && env.IMAGES) {
-                const margins: ("bottom" | "top" | "left" | "right")[] = ["bottom", "top", "left", "right"];
-                for (const margin of margins) {
-                    if (reporter) await reporter.addLog("watermark", `[${fileName}] Scanning ${margin} edge margin...`, "info");
-                    try {
-                        const croppedBuffer = await cropImageMargin(buffer, margin, env);
-                        if (croppedBuffer !== buffer) {
-                            const croppedBase64 = Buffer.from(croppedBuffer).toString("base64");
-                            let croppedOcr = "";
-                            if (ocrConfig.provider === "rolmocr") {
-                                croppedOcr = await extractWithRolmOCR(croppedBase64, env, null, `${fileName}_${margin}`);
-                            } else if (ocrConfig.provider === "google") {
-                                croppedOcr = await extractWithGoogleVision(croppedBase64, env, null, `${fileName}_${margin}`);
-                            }
-                            if (croppedOcr) {
-                                const lines = croppedOcr.split('\n');
-                                for (const line of lines) {
-                                    const parsed = parseWatermark(line);
-                                    if (parsed && parsed.auditId) {
-                                        watermarkData = parsed;
-                                        if (reporter) await reporter.addLog("watermark", `[${fileName}] Watermark detected on ${margin} margin crop!`, "success");
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    } catch (cropErr) {
-                        console.error(`[Pipeline] Margin crop flow failed for ${margin}:`, cropErr);
-                    }
-                    if (watermarkData) break;
-                }
-            }
+			// If edge crop didn't find a watermark, scan the full-image OCR output as backup
+			if (!watermarkData && ocrText) {
+				for (const line of ocrText.split('\n')) {
+					const parsed = parseWatermark(line);
+					if (parsed?.auditId) {
+						watermarkData = parsed;
+						await reporter.addLog("watermark", `[${fileName}] Watermark found in full-image OCR: ${parsed.auditId}`, "success");
+						break;
+					}
+				}
+			}
 
             // Step 1.8: Background Removal — AFTER watermark extraction, BEFORE Qwen/OCR cognition
             // Original buffer edges (watermark) are safe. cleanBuffer feeds all subsequent AI steps.
