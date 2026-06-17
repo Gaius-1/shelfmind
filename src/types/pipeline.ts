@@ -42,9 +42,21 @@ export const initialNodes: Node<CustomNodeData>[] = [
 		},
 	},
 	{
-		id: "structured",
+		id: "watermark",
 		type: "customNode",
 		position: { x: 650, y: 250 },
+		data: {
+			title: "Watermark Parsing",
+			description: "Extract and apply physical barcode tag overrides.",
+			iconType: "barcode",
+			badge: "RULES",
+			status: "pending",
+		},
+	},
+	{
+		id: "structured",
+		type: "customNode",
+		position: { x: 950, y: 250 },
 		data: {
 			title: "Qwen3-VL Extraction",
 			description: "Cognition: Maps OCR text to JSON schema.",
@@ -55,7 +67,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 	{
 		id: "grouping",
 		type: "customNode",
-		position: { x: 950, y: 250 },
+		position: { x: 1250, y: 250 },
 		data: {
 			title: "Map-based Grouping",
 			description: "Merges records by imageTag or BARCODE.",
@@ -66,7 +78,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 	{
 		id: "database",
 		type: "customNode",
-		position: { x: 1250, y: 250 },
+		position: { x: 1550, y: 250 },
 		data: {
 			title: "Database Write",
 			description: "Inserts merged records to SQLite.",
@@ -77,7 +89,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 	{
 		id: "deduplication",
 		type: "customNode",
-		position: { x: 1550, y: 250 },
+		position: { x: 1850, y: 250 },
 		data: {
 			title: "Merge Suggestions",
 			description: "Post-job scan for duplicate pairs.",
@@ -99,6 +111,14 @@ export const initialEdges: Edge[] = [
 	{
 		id: "e_ocr",
 		source: "ocr",
+		target: "watermark",
+		animated: false,
+		type: "smoothstep",
+		style: { strokeWidth: 2 },
+	},
+	{
+		id: "e_watermark",
+		source: "watermark",
 		target: "structured",
 		animated: false,
 		type: "smoothstep",

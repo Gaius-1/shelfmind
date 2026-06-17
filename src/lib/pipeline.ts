@@ -290,6 +290,7 @@ export async function processJob(
         await db.update(jobs).set({ status: "PROCESSING", progress: 10, startedAt: new Date().toISOString() }).where(eq(jobs.id, jobId));
 
         const rawExtractions: IMDBProduct[] = [];
+        let anyWatermarkFound = false;
         const limit = pLimit(5); // 5 concurrent requests to avoid rate limits
 
         const ocrConfig = getOcrProvider(env);
@@ -355,7 +356,8 @@ export async function processJob(
                     if (!extracted.rawVisionData) extracted.rawVisionData = {};
                     extracted.rawVisionData[`${fileName}_watermark`] = watermarkData;
                     
-                    await reporter.addLog("structured", `[${fileName}] Applied deterministic watermark metadata overrides`, "info");
+                    anyWatermarkFound = true;
+                    await reporter.addLog("watermark", `[${fileName}] Applied deterministic watermark metadata overrides from tag ${watermarkData.auditId}`, "success");
                 }
 
                 // Attach the OCR text to the product so it saves to the DB later
@@ -382,8 +384,18 @@ export async function processJob(
         await reporter.updateNodeState("ocr", "completed");
         await reporter.updateEdgeState("e1", true, "#10b981");
 
-        await reporter.updateNodeState("structured", "completed");
+        // Watermark Parsing phase
+        await reporter.updateNodeState("watermark", "active");
+        if (anyWatermarkFound) {
+            await reporter.addLog("watermark", "Watermark tag override phase completed successfully", "success");
+        } else {
+            await reporter.addLog("watermark", "No physical watermark tags detected", "info");
+        }
+        await reporter.updateNodeState("watermark", "completed");
         await reporter.updateEdgeState("e_ocr", true, "#10b981");
+
+        await reporter.updateNodeState("structured", "completed");
+        await reporter.updateEdgeState("e_watermark", true, "#10b981");
 
         await reporter.updateNodeState("grouping", "active");
         await reporter.addLog("grouping", `Grouping ${rawExtractions.length} extractions...`, "info");
