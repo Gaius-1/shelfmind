@@ -243,7 +243,7 @@ async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrTe
     
     // Read from Cloudflare env bindings if available, otherwise fallback to process.env
     const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined);
-    const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-vediqvqa7d9er2yt.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
+    const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-e8idycj2w4qgstsm.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
 
     if (!apiKey) {
         console.error("[Qwen3-VL] Missing QWEN_API_KEY in environment");
@@ -305,17 +305,25 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
     }
 
     const data = await response.json();
-    const content = data.choices[0].message.content;
-    
+    const content = data.choices?.[0]?.message?.content ?? "";
+
     try {
         let jsonStr = content;
-        const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
-        if (jsonMatch) jsonStr = jsonMatch[1];
-        else {
-            const start = content.indexOf("{");
-            const end = content.lastIndexOf("}");
+
+        // Qwen3 thinking models emit <think>...</think> before the actual response.
+        // Strip it first so the JSON extraction logic below doesn't find a '{' inside
+        // the reasoning block instead of the real output object.
+        const thinkStripped = jsonStr.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+        if (thinkStripped) jsonStr = thinkStripped;
+
+        const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (jsonMatch) {
+            jsonStr = jsonMatch[1];
+        } else {
+            const start = jsonStr.indexOf("{");
+            const end = jsonStr.lastIndexOf("}");
             if (start !== -1 && end !== -1 && end > start) {
-                jsonStr = content.substring(start, end + 1);
+                jsonStr = jsonStr.substring(start, end + 1);
             }
         }
         
@@ -347,7 +355,7 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
 
 async function extractWatermarkWithQwen(croppedBase64: string, env: any = null): Promise<string> {
     const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined);
-    const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-vediqvqa7d9er2yt.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
+    const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-e8idycj2w4qgstsm.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
 
     if (!apiKey) {
         console.error("[Qwen3-VL] Missing QWEN_API_KEY for watermark extraction");
@@ -385,8 +393,10 @@ Return ONLY the exact text printed on the image margin. If you cannot see any re
         }
 
         const data = await response.json();
-        const text = data.choices?.[0]?.message?.content || "";
-        return text.trim();
+        const raw = data.choices?.[0]?.message?.content ?? "";
+        // Strip Qwen3 <think> reasoning block before returning watermark text
+        const text = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+        return text;
     } catch (e) {
         console.error("[Qwen3-VL-Watermark] Failed to fetch:", e);
         return "";
