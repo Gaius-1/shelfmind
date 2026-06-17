@@ -132,8 +132,8 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 				// Fuzzy compare the numeric base (strip any discriminator suffix before Levenshtein)
 				const numBase = (id: string) => id.replace(/_[A-Z]$/i, "");
 				const idDist = levenshtein(numBase(auditId), numBase(extAuditId));
-				if (idDist > 1) continue;   // clearly different audit IDs → different products
-				foundKey = key; break;       // same or 1-edit on numeric base → same product
+				if (idDist > 0) continue;   // different audit IDs → different products (exact match only)
+				foundKey = key; break;       // exact numeric base match → same product
 			}
 
 			// Helper for Conflict Detection
