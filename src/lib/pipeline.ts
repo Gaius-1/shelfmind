@@ -50,14 +50,15 @@ export function getOcrProvider(env: any = null): {
     endpoint?: string;
     model?: string;
 } {
-    // 1. Check for Fireworks API key
+    // 1. Check for Fireworks API key specifically meant for RolmOCR
     const fireworksKey = env?.FIREWORKS_API_KEY || (typeof process !== "undefined" ? process.env.FIREWORKS_API_KEY : undefined);
-    if (fireworksKey) {
+    const hasExplicitRolmOcr = env?.ROLMOCR_MODEL || env?.REDUCTO_MODEL || (typeof process !== "undefined" ? (process.env.ROLMOCR_MODEL || process.env.REDUCTO_MODEL) : undefined);
+    if (fireworksKey && hasExplicitRolmOcr) {
         return {
             provider: "rolmocr",
             apiKey: fireworksKey,
             endpoint: env?.ROLMOCR_API_ENDPOINT || env?.REDUCTO_API_ENDPOINT || (typeof process !== "undefined" ? (process.env.ROLMOCR_API_ENDPOINT || process.env.REDUCTO_API_ENDPOINT) : undefined) || "https://api.fireworks.ai/inference/v1/chat/completions",
-            model: env?.ROLMOCR_MODEL || env?.REDUCTO_MODEL || (typeof process !== "undefined" ? (process.env.ROLMOCR_MODEL || process.env.REDUCTO_MODEL) : undefined) || "accounts/fireworks/models/rolm-ocr"
+            model: hasExplicitRolmOcr
         };
     }
 
@@ -237,7 +238,7 @@ async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrTe
     
     // Read from Cloudflare env bindings if available, otherwise fallback to process.env
     const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined);
-    const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://api.fireworks.ai/inference/v1/chat/completions";
+    const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-vediqvqa7d9er2yt.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
 
     if (!apiKey) {
         console.error("[Qwen3-VL] Missing QWEN_API_KEY in environment");
@@ -280,7 +281,7 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            model: "accounts/fireworks/models/qwen3-vl-235b-a22b-instruct",
+            model: "qwen3-vl-235b-a22b-instruct",
             messages: [
                 {
                     role: "user",
