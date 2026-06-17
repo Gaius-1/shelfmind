@@ -17,9 +17,10 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 	};
 
 	// Extracts the base audit ID (e.g. GH000413323 from GH000413323_B or GH000413323_A)
+	// Also strips trailing punctuation like commas that Qwen occasionally appends to the first token.
 	const getBaseAuditId = (tag?: string): string => {
 		if (!tag) return "";
-		const firstToken = tag.trim().split(/[\s_║|·•]+/)[0].toUpperCase();
+		const firstToken = tag.trim().split(/[\s_║|·•]+/)[0].toUpperCase().replace(/[,;:.]+$/, "");
 		if (/^[A-Z]{0,10}\d{3,}/i.test(firstToken)) {
 			return firstToken.replace(/_[A-Z0-9]+$/i, "");
 		}
@@ -99,15 +100,14 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 			const extBrand = normalizeStr(existing.BRAND);
 			const extAuditId = getBaseAuditId(existing.imageTag);
 
-			// 0. Hard Block: Different non-empty audit IDs must NEVER be grouped together
-			if (auditId && extAuditId && auditId !== extAuditId) {
-				continue;
-			}
-
-			// 0.5. Hard Merge: Same non-empty audit ID must ALWAYS be grouped together
-			if (auditId && extAuditId && auditId === extAuditId) {
-				foundKey = key;
-				break;
+			// 0. Fuzzy Audit ID Guard
+			// Qwen frequently misreads one digit of the same physical watermark (e.g. 9→6, or inserts/drops a digit).
+			// A Levenshtein distance of 1 on a ~12-char audit ID is almost certainly the same product.
+			// Distance > 1 means genuinely different IDs → hard block.
+			if (auditId && extAuditId) {
+				const idDist = levenshtein(auditId, extAuditId);
+				if (idDist > 1) continue;   // clearly different products — never merge
+				foundKey = key; break;       // same or 1-edit — treat as same product
 			}
 
 			// Helper for Conflict Detection
@@ -122,7 +122,17 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 			const isSafeSubstringMatch = (n: string, extN: string) => {
 				if (n === extN) return true;
 				const isSub = extN.includes(n) || n.includes(extN);
-				if (!isSub) return false;
+				if (!isSub) {
+					// Even when names aren't substrings of each other, same brand + long shared
+					// common prefix (≥8 chars) strongly implies the same product photographed from
+					// different angles (e.g. "U-FRESH ORANGE 350ML…" vs "U-FRESH ORANGE JUICE DRINK").
+					if (brand && extBrand && brand === extBrand) {
+						let cp = 0;
+						while (cp < n.length && cp < extN.length && n[cp] === extN[cp]) cp++;
+						if (cp >= 8) return true;
+					}
+					return false;
+				}
 				// Safe if they explicitly share a brand
 				if (brand && extBrand && brand === extBrand) return true;
 				// Safe if the matched substring is substantial (avoids generic words like "drink")
