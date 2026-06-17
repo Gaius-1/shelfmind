@@ -167,6 +167,41 @@ async function extractWithGoogleVision(base64Image: string, env: any = null, rep
     }
 }
 
+async function cropImageMargin(
+	buffer: ArrayBuffer,
+	margin: "bottom" | "top" | "left" | "right",
+	env: any = null,
+): Promise<ArrayBuffer> {
+	if (!env || !env.IMAGES) {
+		return buffer;
+	}
+	try {
+		const options: any = { fit: "crop" };
+		if (margin === "bottom") {
+			options.gravity = { x: 0.5, y: 0.95 };
+			options.width = 1600;
+			options.height = 240;
+		} else if (margin === "top") {
+			options.gravity = { x: 0.5, y: 0.05 };
+			options.width = 1600;
+			options.height = 240;
+		} else if (margin === "left") {
+			options.gravity = { x: 0.05, y: 0.5 };
+			options.width = 240;
+			options.height = 1600;
+		} else if (margin === "right") {
+			options.gravity = { x: 0.95, y: 0.5 };
+			options.width = 240;
+			options.height = 1600;
+		}
+		const transformed = env.IMAGES.transform(new Response(buffer), options);
+		return await transformed.arrayBuffer();
+	} catch (e) {
+		console.error(`[Pipeline] Image crop for margin ${margin} failed:`, e);
+		return buffer;
+	}
+}
+
 async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrText: string, env: any = null): Promise<IMDBProduct | null> {
     const base64Image = Buffer.from(imageBuffer).toString("base64");
     
@@ -182,7 +217,7 @@ async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrTe
     const prompt = `You are a precise product data extraction assistant. Extract product details as a JSON object with EXACTLY these fields:
 ITEM_NAME, BARCODE, MANUFACTURER, BRAND, WEIGHT, PACKAGING_TYPE, COUNTRY, VARIANT, TYPE, FRAGRANCE_FLAVOR, PROMOTION, ADDONS, TAGLINE, imageTag.
 ALSO, output a nested object named "fieldConfidence" containing a float (0.0 to 1.0) representing your mathematical certainty for each extracted field.
-Note 1 (CRITICAL): imageTag MUST be the unique serial tag printed on the edge/margin of the photo (e.g., "GH000364912 U-FRESH ORANGE 350ML..."). Extract the ENTIRE string, but EXCLUDE words like "Front", "Back", "Left", or "Right".
+Note 1 (CRITICAL): imageTag MUST be the unique serial tag printed on the edge/margin of the photo (e.g., "GH000364912 U-FRESH ORANGE 350ML..."). Extract the ENTIRE string, but EXCLUDE words like "Front", "Back", "Left", or "Right". DO NOT copy or hallucinate the example tag "GH000364912" if you cannot see a watermark on the image. If you cannot clearly read the watermark on the image, output an empty string "".
 Note 2: For COUNTRY, look closely for phrases like "Made in [Country]".
 Note 3: If text is blurry or not explicitly printed, output an empty string "". DO NOT guess.
 Note 4 (CRITICAL): Use the exact raw OCR text below for spelling.
@@ -343,6 +378,40 @@ export async function processJob(
                 }
             }
 
+            // Fallback: Multi-margin cropping if watermark wasn't found in full OCR
+            if (!watermarkData && env && env.IMAGES) {
+                const margins: ("bottom" | "top" | "left" | "right")[] = ["bottom", "top", "left", "right"];
+                for (const margin of margins) {
+                    if (reporter) await reporter.addLog("watermark", `[${fileName}] Scanning ${margin} edge margin...`, "info");
+                    try {
+                        const croppedBuffer = await cropImageMargin(buffer, margin, env);
+                        if (croppedBuffer !== buffer) {
+                            const croppedBase64 = Buffer.from(croppedBuffer).toString("base64");
+                            let croppedOcr = "";
+                            if (ocrConfig.provider === "rolmocr") {
+                                croppedOcr = await extractWithRolmOCR(croppedBase64, env, null, `${fileName}_${margin}`);
+                            } else if (ocrConfig.provider === "google") {
+                                croppedOcr = await extractWithGoogleVision(croppedBase64, env, null, `${fileName}_${margin}`);
+                            }
+                            if (croppedOcr) {
+                                const lines = croppedOcr.split('\n');
+                                for (const line of lines) {
+                                    const parsed = parseWatermark(line);
+                                    if (parsed && parsed.auditId) {
+                                        watermarkData = parsed;
+                                        if (reporter) await reporter.addLog("watermark", `[${fileName}] Watermark detected on ${margin} margin crop!`, "success");
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    } catch (cropErr) {
+                        console.error(`[Pipeline] Margin crop flow failed for ${margin}:`, cropErr);
+                    }
+                    if (watermarkData) break;
+                }
+            }
+
             // Step 2: Cognition (Qwen3-VL)
             const extracted = await extractWithQwen(buffer, fileName, ocrText, env);
             if (extracted) {
@@ -352,6 +421,9 @@ export async function processJob(
                     if (watermarkData.packaging) extracted.PACKAGING_TYPE = watermarkData.packaging;
                     if (watermarkData.manufacturer) extracted.MANUFACTURER = watermarkData.manufacturer;
                     if (watermarkData.country) extracted.COUNTRY = watermarkData.country;
+                    
+                    // Overwrite imageTag with the deterministic watermark tag for correct grouping
+                    extracted.imageTag = watermarkData.auditId + (watermarkData.productDescription ? " " + watermarkData.productDescription : "");
                     
                     if (!extracted.rawVisionData) extracted.rawVisionData = {};
                     extracted.rawVisionData[`${fileName}_watermark`] = watermarkData;

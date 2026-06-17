@@ -88,7 +88,7 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 				: false;
 
 			// 1. Fuzzy Tag Matching (Handle "Front" / "Back" edge suffixes by checking for substrings or very low Levenshtein)
-			if (tag && extTag && tag.length > 5 && extTag.length > 5) {
+			if (tag && extTag && tag.length > 5 && extTag.length > 5 && !hasBrandConflict && !hasBarcodeConflict) {
 				// If one string is almost entirely contained in the other
 				if (tag.includes(extTag) || extTag.includes(tag)) {
 					foundKey = key; break;
