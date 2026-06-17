@@ -469,6 +469,11 @@ export async function processJob(
             // Step 2: Cognition (Qwen3-VL) — receives clean background-removed buffer
             const extracted = await extractWithQwen(cleanBuffer, fileName, ocrText, env);
             if (extracted) {
+                // Sanitize hallucinated prompt example tags (e.g. GH000364912)
+                if (extracted.imageTag && (extracted.imageTag.includes("GH000364912") || extracted.imageTag.toUpperCase().includes("U-FRESH ORANGE"))) {
+                    extracted.imageTag = "";
+                }
+
                 if (watermarkData) {
                     if (watermarkData.productDescription) extracted.ITEM_NAME = watermarkData.productDescription;
                     if (watermarkData.weight) extracted.WEIGHT = watermarkData.weight;
@@ -620,7 +625,8 @@ export async function processJob(
                         fileName: f, 
                         ocr: product.rawVisionData ? product.rawVisionData[`${f}_ocr`] || null : null, 
                         zxing: null, 
-                        vision: product.rawVisionData ? product.rawVisionData[f] : null 
+                        vision: product.rawVisionData ? product.rawVisionData[f] : null,
+                        watermark: product.rawVisionData ? product.rawVisionData[`${f}_watermark`] || null : null
                     })) 
                 },
                 fieldMetadata: fieldMeta, 

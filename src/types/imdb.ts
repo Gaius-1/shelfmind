@@ -68,6 +68,7 @@ export interface RawExtractionPerImage {
 	zxing: { barcode: string | null } | null;
 	ocr: string | null; // raw text blob from VLM OCR prompt
 	vision: Partial<Record<ImdbColumnName, string>> | null; // structured JSON from VLM
+	watermark?: any; // parsed watermark data
 }
 
 export interface RawExtraction {
