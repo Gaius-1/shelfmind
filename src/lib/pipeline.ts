@@ -409,6 +409,50 @@ CRITICAL RULES:
     }
 }
 
+// ── Post-extraction Sanitization Helpers ────────────────────────────────────
+
+/** Strips divider/label metadata text from ITEM_NAME (e.g. "RETAIL AUDIT", date stamps). */
+function sanitizeItemName(name: string): string {
+	if (!name) return name;
+	// Remove common audit divider/label metadata prefixes
+	const cleaned = name
+		.replace(/RETAIL\s+AUDIT[^]*?(?=\b[A-Z]{2,}\b)/i, '')
+		.replace(/PRODUCT\s+IMAGES[^]*?(?=\b[A-Z]{2,}\b)/i, '')
+		// Date/time stamp patterns: "SAT APR 25 09:09:48 GMT 2026"
+		.replace(/[A-Z]{3}\s+\d{1,2}\s+[A-Z]{3}\s+\d{2,4}\s+\d{2}:\d{2}:\d{2}\s+[A-Z]+\s+\d{4}\s*/i, '')
+		// Short label prefixes: "MAR-26 - Product..."
+		.replace(/^[A-Z]{3,10}-?\d{0,2}\s+-\s+/i, '')
+		.trim();
+	// If stripping removed too much, return original
+	return cleaned.length < 5 ? name : cleaned;
+}
+
+/** Detects E-number hallucination sequences in ingredient-like text fields. */
+function hasENumberHallucination(text: string): boolean {
+	if (!text || text.length < 50) return false;
+	const eNumbers = text.match(/\bE\d{3,}\b/g);
+	if (!eNumbers || eNumbers.length < 10) return false;
+	// Hallucinated E-number lists span a wide range of prefixes (E1xx, E2xx, ..., E9xx)
+	const uniquePrefixes = new Set(eNumbers.map(e => e.substring(0, 3)));
+	return uniquePrefixes.size >= 5;
+}
+
+/** Fields to check for E-number hallucination. */
+const E_NUMBER_FIELDS = ['ADDONS', 'FRAGRANCE_FLAVOR', 'TAGLINE', 'TYPE', 'ITEM_NAME'] as const;
+
+/** Clears hallucinated E-number content from extraction fields. */
+function clearENumberHallucinations(extracted: IMDBProduct, reporter: JobReporter, fileName: string): void {
+	for (const field of E_NUMBER_FIELDS) {
+		const val = (extracted as any)[field];
+		if (typeof val === 'string' && hasENumberHallucination(val)) {
+			reporter.addLog("structured", `[${fileName}] Cleared E-number hallucination in ${field}`, "warning");
+			(extracted as any)[field] = '';
+		}
+	}
+}
+
+// ─── Job Processing ─────────────────────────────────────────────────────────
+
 export async function processJob(
 	jobId: string,
 	orgId: string,
@@ -518,28 +562,9 @@ export async function processJob(
 				}
 			}
 
-			// Final fallback: ask Qwen to read the watermark directly from the full image.
-			// This runs when NEITHER the edge-crop pipeline NOR the OCR text found a valid watermark.
-			// Reading from the full image is less precise than a margin crop but still gives us the
-			// complete watermark string (audit ID + full product description) which is critical for
-			// correct grouping. Without this, Qwen's imageTag field (from the main cognition prompt)
-			// often returns a truncated string, causing different products to share a group key.
-			if (!watermarkData) {
-				const fullImageWatermarkText = await extractWatermarkWithQwen(base64Original, env);
-				if (fullImageWatermarkText) {
-					for (const line of fullImageWatermarkText.split('\n')) {
-						const parsed = parseWatermark(line);
-						if (parsed?.auditId) {
-							watermarkData = parsed;
-							await reporter.addLog("watermark", `[${fileName}] Watermark found via full-image Qwen scan: ${parsed.auditId}`, "success");
-							break;
-						}
-					}
-					if (!watermarkData) {
-						await reporter.addLog("watermark", `[${fileName}] Full-image Qwen watermark scan returned no valid audit ID`, "info");
-					}
-				}
-			}
+			// No third fallback — asking Qwen to read watermarks from the full image was removed
+			// because it hallucinated fake watermarks that overrode legitimate ITEM_NAME values.
+			// Only margin-crop OCR and full-image OCR text are trusted watermark sources.
 
             // Step 1.8: Background Removal — AFTER watermark extraction, BEFORE Qwen/OCR cognition
             // Original buffer edges (watermark) are safe. cleanBuffer feeds all subsequent AI steps.
@@ -572,8 +597,11 @@ export async function processJob(
                     extracted.imageTag = "";
                 }
 
+                // ── Post-extraction sanitization ─────────────────────────────────────
+                // Sanitize ITEM_NAME (strip divider/label metadata) and detect E-number hallucinations
+                
                 if (watermarkData) {
-                    if (watermarkData.productDescription) extracted.ITEM_NAME = watermarkData.productDescription;
+                    if (watermarkData.productDescription) extracted.ITEM_NAME = sanitizeItemName(watermarkData.productDescription);
                     if (watermarkData.weight) extracted.WEIGHT = watermarkData.weight;
                     if (watermarkData.packaging) extracted.PACKAGING_TYPE = watermarkData.packaging;
                     if (watermarkData.manufacturer) extracted.MANUFACTURER = watermarkData.manufacturer;
@@ -592,16 +620,24 @@ export async function processJob(
                     
                     anyWatermarkFound = true;
                     await reporter.addLog("watermark", `[${fileName}] Applied deterministic watermark metadata overrides from tag ${watermarkData.auditId}${watermarkData.side ? ` [${watermarkData.side}]` : ""}`, "success");
-                } else if (extracted.imageTag) {
-                    // Fallback: detect side from Qwen's imageTag if no physical watermark was found
-                    // The Qwen prompt instructs it to EXCLUDE side words, but in case it included one:
-                    const SIDE_RE = /\b(Front|Back|Left|Right|Top|Bottom|Barcode|First_Side|Second_Side|Side_1|Side_2)\b/i;
-                    const sideMatch = extracted.imageTag.match(SIDE_RE);
-                    if (sideMatch) {
-                        extracted.imageSide = sideMatch[1];
-                        extracted.imageTag = extracted.imageTag.replace(SIDE_RE, "").trim();
+                } else {
+                    // No watermark found — sanitize Qwen's raw extraction
+                    extracted.ITEM_NAME = sanitizeItemName(extracted.ITEM_NAME);
+
+                    if (extracted.imageTag) {
+                        // Fallback: detect side from Qwen's imageTag if no physical watermark was found
+                        // The Qwen prompt instructs it to EXCLUDE side words, but in case it included one:
+                        const SIDE_RE = /\b(Front|Back|Left|Right|Top|Bottom|Barcode|First_Side|Second_Side|Side_1|Side_2)\b/i;
+                        const sideMatch = extracted.imageTag.match(SIDE_RE);
+                        if (sideMatch) {
+                            extracted.imageSide = sideMatch[1];
+                            extracted.imageTag = extracted.imageTag.replace(SIDE_RE, "").trim();
+                        }
                     }
                 }
+
+                // Clear E-number hallucination in any text field (runs in both watermark and non-watermark paths)
+                clearENumberHallucinations(extracted, reporter, fileName);
 
                 // Attach the OCR text to the product so it saves to the DB later
                 if (ocrText) {

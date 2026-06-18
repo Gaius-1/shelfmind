@@ -25,11 +25,16 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 	//      "GH000413316_B Ena Pa..." → "GH000413316_B"   ← DIFFERENT product, must not merge
 	//      "GH0005109020 Kivo..."    → "GH0005109020"    ← no suffix, fuzzy OCR error handled separately
 	// IMPORTANT: Do NOT split on underscore or dot-suffix.
+	// NOTE: Only matches IDs that are at least 6 characters total (prefix + digits) to avoid
+	//       falsely matching short non-audit text like "R123" or "BLUE456" as audit IDs.
 	const getBaseAuditId = (tag?: string): string => {
 		if (!tag) return "";
 		const match = tag.trim().match(/^([A-Z]{0,10}\d{3,})(?:[_. -]([A-Z]))?(?:[^A-Z\d]|$)/i);
 		if (match) {
 			const mainId = match[1].toUpperCase();
+			// Reject short IDs that are unlikely to be real audit visit IDs
+			// Real audit IDs are typically 8+ characters (e.g. GH00041222, CH000364912)
+			if (mainId.length < 6) return "";
 			const suffix = match[2] ? match[2].toUpperCase() : "";
 			return suffix ? `${mainId}_${suffix}` : mainId;
 		}
