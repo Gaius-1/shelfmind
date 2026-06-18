@@ -102,6 +102,44 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 		return matrix[b.length][a.length];
 	};
 
+	// Pure helper: checks if two normalized product names are close enough to be the same product.
+	// Takes brand/extBrand as parameters so it can be called from any scope.
+	const isSafeSubstringMatch = (n: string, extN: string, brandA: string, brandB: string): boolean => {
+		if (n === extN) return true;
+		const isSub = extN.includes(n) || n.includes(extN);
+		if (!isSub) {
+			// Even when names aren't substrings of each other, same brand + long shared
+			// common prefix (≥8 chars) strongly implies the same product photographed from
+			// different angles (e.g. "U-FRESH ORANGE 350ML…" vs "U-FRESH ORANGE JUICE DRINK").
+			if (brandA && brandB && brandA === brandB) {
+				let cp = 0;
+				while (cp < n.length && cp < extN.length && n[cp] === extN[cp]) cp++;
+				if (cp >= 8) return true;
+			}
+			return false;
+		}
+		// Safe if they explicitly share a brand
+		if (brandA && brandB && brandA === brandB) return true;
+		// Safe if the matched substring is substantial (avoids generic words like "drink")
+		return n.length > 10 && extN.length > 10;
+	};
+
+	// Extracts the product-description portion of a raw imageTag — everything that follows the audit ID.
+	// e.g. "GH000413323_B Zesta Ginger 25+7 Free 57.6g Envelope Teabag box Cardboard Suiza"
+	//       → "zestaginger257free576genvelopeteabagboxcardboardsuiza"
+	// This gives us a direct signal from the WATERMARK ITSELF that two images are different products,
+	// without having to rely on Qwen's ITEM_NAME extraction which may be noisy.
+	const getTagDescription = (rawTag?: string): string => {
+		if (!rawTag) return "";
+		const words = rawTag.trim().split(/\s+/);
+		if (words.length <= 1) return "";
+		// If the first token is an audit ID, the rest is the product description
+		if (AUDIT_ID_REGEX.test(words[0])) {
+			return normalizeStr(words.slice(1).join(" "));
+		}
+		return "";
+	};
+
 	for (const entry of sortedExtractions) {
 		const tag = normalizeTag(entry.imageTag);
 		const barcode = normalizeStr(entry.BARCODE);
@@ -135,8 +173,32 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 				const cleanB = numBase(extAuditId);
 				const idDist = levenshtein(cleanA, cleanB);
 
+				// Pre-compute name conflict here so the audit-ID path also respects it.
+				// Two different products CAN share the same audit slot (e.g. an auditor photographed
+				// two consecutive products with the same tag). If their names clearly differ, do NOT merge.
+				const auditNameConflict = name && extName
+					? !isSafeSubstringMatch(name, extName, brand, extBrand)
+					: false;
+				const auditBarcodeConflict = barcode && extBarcode && barcode.length > 8 && extBarcode.length > 8
+					? levenshtein(barcode, extBarcode) > 2
+					: (barcode && extBarcode && barcode !== extBarcode);
+
+				// Compare the product-description part of the watermark text directly.
+				// Two images can share the same audit ID but have DIFFERENT product descriptions
+				// in the watermark (e.g. same auditor slot, two different SKUs).
+				// If their watermark descriptions diverge substantially, block the merge outright —
+				// this is the most reliable signal we have from the raw data.
+				const descA = getTagDescription(entry.imageTag);
+				const descB = getTagDescription(existing.imageTag);
+				const auditTagDescConflict = descA.length > 8 && descB.length > 8
+					? levenshtein(descA.substring(0, 30), descB.substring(0, 30)) > 10
+					: false;
+
 				if (idDist === 0) {
-					foundKey = key; break; // exact numeric base match → same product
+					// Exact same audit ID — merge ONLY if the watermark description and product name agree.
+					// Different watermark descriptions = different products sharing the same audit slot.
+					if (auditTagDescConflict || auditNameConflict || auditBarcodeConflict) continue;
+					foundKey = key; break;
 				}
 
 				if (idDist === 1) {
@@ -151,7 +213,8 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 							continue;
 						}
 					}
-					// Not consecutive, but distance is 1 (OCR error) -> same product, merge!
+					// OCR digit error — only merge if watermark description and names also agree
+					if (auditTagDescConflict || auditNameConflict || auditBarcodeConflict) continue;
 					foundKey = key; break;
 				}
 
@@ -168,32 +231,16 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 				? !(brand.includes(extBrand) || extBrand.includes(brand) || brand.length <= 2 || extBrand.length <= 2)
 				: false;
 
-			const isSafeSubstringMatch = (n: string, extN: string) => {
-				if (n === extN) return true;
-				const isSub = extN.includes(n) || n.includes(extN);
-				if (!isSub) {
-					// Even when names aren't substrings of each other, same brand + long shared
-					// common prefix (≥8 chars) strongly implies the same product photographed from
-					// different angles (e.g. "U-FRESH ORANGE 350ML…" vs "U-FRESH ORANGE JUICE DRINK").
-					if (brand && extBrand && brand === extBrand) {
-						let cp = 0;
-						while (cp < n.length && cp < extN.length && n[cp] === extN[cp]) cp++;
-						if (cp >= 8) return true;
-					}
-					return false;
-				}
-				// Safe if they explicitly share a brand
-				if (brand && extBrand && brand === extBrand) return true;
-				// Safe if the matched substring is substantial (avoids generic words like "drink")
-				return n.length > 10 && extN.length > 10;
-			};
+			const isSafeSubstringMatchLocal = (n: string, extN: string) => isSafeSubstringMatch(n, extN, brand, extBrand);
 
-			const hasNameConflict = name && extName 
-				? !isSafeSubstringMatch(name, extName)
+			const hasNameConflict = name && extName
+				? !isSafeSubstringMatchLocal(name, extName)
 				: false;
 
 			// 1. Fuzzy Tag Matching (Handle "Front" / "Back" edge suffixes by checking for substrings or very low Levenshtein)
-			if (tag && extTag && tag.length > 5 && extTag.length > 5 && !hasBrandConflict && !hasBarcodeConflict) {
+			// IMPORTANT: name conflict must be checked here too — two different products can share the
+			// same audit watermark tag when an auditor photographs multiple SKUs in the same session slot.
+			if (tag && extTag && tag.length > 5 && extTag.length > 5 && !hasBrandConflict && !hasBarcodeConflict && !hasNameConflict) {
 				// If one string is almost entirely contained in the other
 				if (tag.includes(extTag) || extTag.includes(tag)) {
 					foundKey = key; break;
@@ -233,11 +280,11 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 
 			// 5. Session Prefix Fallback
 			// If two images share the exact same collector session prefix (e.g. S227094844),
-			// and there are no barcode/brand conflicts, they belong to the same product.
+			// and there are no barcode/brand/name conflicts, they belong to the same product.
 			const entrySession = getSessionPrefix(entry.sourceImages);
 			const extSession = getSessionPrefix(existing.sourceImages);
 			if (entrySession && extSession && entrySession === extSession) {
-				if (!hasBarcodeConflict && !hasBrandConflict) {
+				if (!hasBarcodeConflict && !hasBrandConflict && !hasNameConflict) {
 					foundKey = key; break;
 				}
 			}

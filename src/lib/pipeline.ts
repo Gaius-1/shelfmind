@@ -253,7 +253,7 @@ async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrTe
     const prompt = `You are a precise product data extraction assistant. Extract product details as a JSON object with EXACTLY these fields:
 ITEM_NAME, BARCODE, MANUFACTURER, BRAND, WEIGHT, PACKAGING_TYPE, COUNTRY, VARIANT, TYPE, FRAGRANCE_FLAVOR, PROMOTION, ADDONS, TAGLINE, imageTag.
 ALSO, output a nested object named "fieldConfidence" containing a float (0.0 to 1.0) representing your mathematical certainty for each extracted field.
-Note 1 (CRITICAL): imageTag MUST be the unique serial tag printed on the edge/margin of the photo (e.g., "GH000364912 U-FRESH ORANGE 350ML..."). Extract the ENTIRE string, but EXCLUDE words like "Front", "Back", "Left", or "Right". DO NOT copy or hallucinate the example tag "GH000364912" if you cannot see a watermark on the image. If you cannot clearly read the watermark on the image, output an empty string "".
+Note 1 (CRITICAL): imageTag MUST be the unique serial tag printed on the edge/margin of the photo (e.g., "GH000364912 U-FRESH ORANGE 350ML BOTTLE PLASTIC U-FRESH COMPANY LIMITED"). Extract the COMPLETE string — every word from the audit ID through to the end of the watermark line — do NOT truncate or stop early. EXCLUDE only the final side word (Front/Back/Left/Right/Barcode) if present. DO NOT copy or hallucinate the example tag "GH000364912" if you cannot see a watermark on the image. If you cannot clearly read the watermark on the image, output an empty string "".
 Note 2: For COUNTRY, look closely for phrases like "Made in [Country]".
 Note 3: If text is blurry or not explicitly printed, output an empty string "". DO NOT guess.
 Note 4 (CRITICAL): Use the exact raw OCR text below for spelling.
@@ -362,9 +362,15 @@ async function extractWatermarkWithQwen(croppedBase64: string, env: any = null):
         return "";
     }
 
-    const prompt = `Read the watermark text printed along the edge/margin of this cropped image. 
-The watermark text typically consists of an audit ID (e.g. starting with GH, C, etc.) followed by some product descriptions or other words.
-Return ONLY the exact text printed on the image margin. If you cannot see any readable text or watermark, return an empty string "". Do not explain or add commentary.`;
+    const prompt = `Read the watermark text printed along the edge/margin of this image.
+The watermark is typically a single line printed in small text on one edge of the photo. It usually starts with an audit/tracking ID (e.g. GH000413323_B, C1000114615, CI00021421_A) followed by a full product description (e.g. "Zesta Ginger 25+7 Free 57.6g Envelope Teabag box Cardboard Suiza") and sometimes ends with a side word (Front/Back/Left/Right).
+
+CRITICAL RULES:
+1. Return the COMPLETE watermark text exactly as printed — do NOT truncate or summarize it.
+2. Include every word from the audit ID through to the end of the product description and side label.
+3. If you can see a watermark but can only partially read it, output what you can see — do NOT stop early.
+4. Return ONLY the raw watermark text on a single line. No explanation, no markdown, no quotes.
+5. If you cannot see any watermark text at all, return an empty string.`;
 
     try {
         const response = await fetch(endpoint, {
@@ -508,6 +514,29 @@ export async function processJob(
 						watermarkData = parsed;
 						await reporter.addLog("watermark", `[${fileName}] Watermark found in full-image OCR: ${parsed.auditId}`, "success");
 						break;
+					}
+				}
+			}
+
+			// Final fallback: ask Qwen to read the watermark directly from the full image.
+			// This runs when NEITHER the edge-crop pipeline NOR the OCR text found a valid watermark.
+			// Reading from the full image is less precise than a margin crop but still gives us the
+			// complete watermark string (audit ID + full product description) which is critical for
+			// correct grouping. Without this, Qwen's imageTag field (from the main cognition prompt)
+			// often returns a truncated string, causing different products to share a group key.
+			if (!watermarkData) {
+				const fullImageWatermarkText = await extractWatermarkWithQwen(base64Original, env);
+				if (fullImageWatermarkText) {
+					for (const line of fullImageWatermarkText.split('\n')) {
+						const parsed = parseWatermark(line);
+						if (parsed?.auditId) {
+							watermarkData = parsed;
+							await reporter.addLog("watermark", `[${fileName}] Watermark found via full-image Qwen scan: ${parsed.auditId}`, "success");
+							break;
+						}
+					}
+					if (!watermarkData) {
+						await reporter.addLog("watermark", `[${fileName}] Full-image Qwen watermark scan returned no valid audit ID`, "info");
 					}
 				}
 			}
