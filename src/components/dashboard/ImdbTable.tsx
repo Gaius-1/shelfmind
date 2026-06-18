@@ -262,7 +262,7 @@ function RecordDetailDialogContent({ recordId, orgId, jobId, recordIds, currentI
             </Button>
           </div>
         </div>
-      )
+      )}
 
       {!hasNavigation && (
         <div className="flex justify-center border-t border-neutral-200 dark:border-neutral-800 mt-6 pt-4">
