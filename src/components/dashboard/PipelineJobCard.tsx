@@ -87,7 +87,7 @@ export function PipelineJobCard({ job }: PipelineJobCardProps) {
       setRetrying(true)
       const res = await fetch(`/api/jobs/${job.id}/retry`, { method: 'POST' })
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}))
+        const errorData = (await res.json().catch(() => ({}))) as any
         throw new Error(errorData.error || await res.text())
       }
       queryClient.invalidateQueries({ queryKey: ['jobs'] })

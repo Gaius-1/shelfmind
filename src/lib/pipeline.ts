@@ -123,7 +123,7 @@ async function extractWithRolmOCR(base64Image: string, env: any = null, reporter
             return "";
         }
 
-        const data = await response.json();
+        const data = (await response.json()) as any;
         return data.choices?.[0]?.message?.content || "";
     } catch (e: any) {
         console.error("[RolmOCR] Request failed:", e);
@@ -159,7 +159,7 @@ async function extractWithGoogleVision(base64Image: string, env: any = null, rep
             return "";
         }
 
-        const data = await response.json();
+        const data = (await response.json()) as any;
         return data.responses?.[0]?.fullTextAnnotation?.text || "";
     } catch (e: any) {
         console.error("[Google Vision] Failed to fetch:", e);
@@ -304,7 +304,7 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
         return null;
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
     const content = data.choices[0].message.content;
     
     try {
@@ -398,7 +398,7 @@ CRITICAL RULES:
             return "";
         }
 
-        const data = await response.json();
+        const data = (await response.json()) as any;
         const raw = data.choices?.[0]?.message?.content ?? "";
         // Strip Qwen3 <think> reasoning block before returning watermark text
         const text = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();

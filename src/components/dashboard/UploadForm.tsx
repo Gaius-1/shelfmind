@@ -55,11 +55,11 @@ export function UploadForm() {
       })
 
       if (!createRes.ok) {
-        const data = await createRes.json().catch(() => ({}))
+        const data = (await createRes.json().catch(() => ({}))) as any
         throw new Error(data.error || 'Failed to initialize job')
       }
 
-      const { jobId } = await createRes.json()
+      const { jobId } = (await createRes.json()) as any
 
       // 2. Upload files in chunks of 5
       const CHUNK_SIZE = 5
@@ -81,7 +81,7 @@ export function UploadForm() {
         })
 
         if (!uploadRes.ok) {
-          const data = await uploadRes.json().catch(() => ({}))
+          const data = (await uploadRes.json().catch(() => ({}))) as any
           throw new Error(data.error || `Failed to upload chunk ${i + 1}`)
         }
         
@@ -94,7 +94,7 @@ export function UploadForm() {
       })
 
       if (!startRes.ok) {
-        const data = await startRes.json().catch(() => ({}))
+        const data = (await startRes.json().catch(() => ({}))) as any
         throw new Error(data.error || 'Failed to start extraction pipeline')
       }
 
