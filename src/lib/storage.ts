@@ -1,5 +1,6 @@
-import { join } from 'path'
+import { join, dirname } from 'path'
 import { existsSync } from 'fs'
+import { mkdir, writeFile, readFile } from 'fs/promises'
 import { getBinding } from './cloudflare.ts'
 
 const MOCK_DIR = join(process.cwd(), '.wrangler', 'mock-r2')
@@ -25,9 +26,10 @@ export async function saveUpload(
     return key
   }
 
-  // Local fallback using Bun
+  // Local fallback using Node fs/promises
   const filePath = join(MOCK_DIR, key)
-  await Bun.write(filePath, buffer)
+  await mkdir(dirname(filePath), { recursive: true })
+  await writeFile(filePath, Buffer.from(buffer as any))
   return key
 }
 
@@ -48,11 +50,11 @@ export async function getUpload(
     return await obj.arrayBuffer()
   }
 
-  // Local fallback
+  // Local fallback using Node fs/promises
   const filePath = join(MOCK_DIR, key)
   if (!existsSync(filePath)) return null
-  const file = Bun.file(filePath)
-  return await file.arrayBuffer()
+  const buf = await readFile(filePath)
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
 }
 
 /**
@@ -114,9 +116,10 @@ export async function saveExport(
     return key
   }
 
-  // Local fallback
+  // Local fallback using Node fs/promises
   const filePath = join(MOCK_DIR, key)
-  await Bun.write(filePath, buffer)
+  await mkdir(dirname(filePath), { recursive: true })
+  await writeFile(filePath, Buffer.from(buffer as any))
   return key
 }
 
@@ -137,11 +140,11 @@ export async function getExport(
     return await obj.arrayBuffer()
   }
 
-  // Local fallback
+  // Local fallback using Node fs/promises
   const filePath = join(MOCK_DIR, key)
   if (!existsSync(filePath)) return null
-  const file = Bun.file(filePath)
-  return await file.arrayBuffer()
+  const buf = await readFile(filePath)
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
 }
 
 /**
