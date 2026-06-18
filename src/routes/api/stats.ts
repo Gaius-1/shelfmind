@@ -81,24 +81,30 @@ const routeOptions: any = {
           const days = 8
           const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
-          const dailyRows = await db.all(sql`
-            SELECT
-              date(created_at) as day,
-              COUNT(*) as cnt,
-              AVG(confidence) as avg_conf,
-              SUM(CASE WHEN flagged = 1 THEN 1 ELSE 0 END) as flagged_cnt
-            FROM imdb_records
-            WHERE organisation_id = ${orgId}
-              AND status = 'ACTIVE'
-              AND date(created_at) >= ${cutoffDate}
-            GROUP BY date(created_at)
-            ORDER BY date(created_at) ASC
-          `).catch(() => [] as any[])
+          const dailyRows = await db.select({
+            day: sql<string>`date(${imdbRecords.createdAt})`,
+            cnt: count(),
+            avg_conf: avg(imdbRecords.confidence),
+            flagged_cnt: sql<number>`sum(case when ${imdbRecords.flagged} = 1 then 1 else 0 end)`
+          })
+            .from(imdbRecords)
+            .where(and(
+              eq(imdbRecords.organisationId, orgId),
+              eq(imdbRecords.status, 'ACTIVE'),
+              sql`date(${imdbRecords.createdAt}) >= ${cutoffDate}`
+            ))
+            .groupBy(sql`date(${imdbRecords.createdAt})`)
+            .orderBy(sql`date(${imdbRecords.createdAt}) ASC`)
+            .catch(() => [] as any[])
 
           // Build a map from date string to row data
           const dayMap = new Map<string, { cnt: number; avg_conf: number | null; flagged_cnt: number }>()
           for (const row of dailyRows) {
-            dayMap.set(row.day, { cnt: row.cnt ?? 0, avg_conf: row.avg_conf, flagged_cnt: row.flagged_cnt ?? 0 })
+            dayMap.set(row.day, {
+              cnt: row.cnt != null ? Number(row.cnt) : 0,
+              avg_conf: row.avg_conf != null ? Number(row.avg_conf) : null,
+              flagged_cnt: row.flagged_cnt != null ? Number(row.flagged_cnt) : 0
+            })
           }
 
           // Fill last 8 days, including days with no data
@@ -113,7 +119,8 @@ const routeOptions: any = {
             const row = dayMap.get(dateStr)
 
             dailyProducts.push({ time: label, value: row?.cnt ?? 0 })
-            dailyConfidence.push({ time: label, value: Number((row?.avg_conf ?? 0).toFixed(2)) })
+            const rawAvgConf = row?.avg_conf ?? 0
+            dailyConfidence.push({ time: label, value: Number(rawAvgConf.toFixed(2)) })
             dailyFlagged.push({ time: label, value: row?.flagged_cnt ?? 0 })
           }
 
