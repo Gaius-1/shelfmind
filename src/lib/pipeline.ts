@@ -286,7 +286,7 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            model: "qwen-vl-max",
+            model: "qwen3-vl-235b-a22b-instruct",
             messages: [
                 {
                     role: "user",
@@ -380,7 +380,7 @@ CRITICAL RULES:
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                model: "qwen-vl-max",
+                model: "qwen3-vl-235b-a22b-instruct",
                 messages: [
                     {
                         role: "user",
