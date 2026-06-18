@@ -1,278 +1,144 @@
-Welcome to your new TanStack Start app! 
+![Dashboard Screenshot](./public/dashboard.png)
 
-# Getting Started
+# ShelfMind
 
-To run this application:
+ShelfMind is a full-stack, AI-powered image-to-item master data tool designed for retail teams to automate the population of Item Master Databases (IMDB). It transforms physical product photographs into structured, 13-column digital records using a multi-stage extraction pipeline involving OCR, Vision Language Models (VLMs), and deterministic watermark parsing.
 
+Built as a multi-tenant SaaS, ShelfMind provides isolated workspaces where members can manage jobs, review extracted data, and export clean catalogs ready for enterprise ingestion.
+
+## Features
+
+- **Multi-Stage AI Extraction Pipeline**: OCR → Watermark Parsing → Background Removal → Qwen3-VL Extraction → Side-Aware Grouping → Database Write
+- **Physical Watermark Tag Parsing**: Deterministic extraction of audit identity, product description, weight, side, manufacturer, and country from printed tags
+- **AI Background Removal**: Cloudflare Images BiRefNet segmentation strips shelf/store environment from product images
+- **Side-Label Intelligence**: Confidence boosting based on image side (Front/Back/Left/Right/Barcode) for accurate field mapping
+- **Real-time Pipeline Visualizer**: Live React Flow visualization streaming from Durable Objects via WebSockets
+- **Multi-Tenant Architecture**: Organisation-scoped workspaces with role-based access control
+- **Duplicate Detection**: Pre-calculated asynchronous duplicate detection with merge/dismiss workflow
+- **Export Options**: Excel (.xlsx), CSV, and JSON exports with org-scoped history
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Framework** | TanStack Start (Vite + React) |
+| **Routing** | TanStack Router |
+| **Authentication** | Better Auth (organisation plugin + Google OAuth) |
+| **Database** | Cloudflare D1 (SQLite) w/ Drizzle ORM |
+| **Storage** | Cloudflare R2 |
+| **Background Tasks** | Cloudflare Queues |
+| **Real-time** | Durable Objects + WebSockets |
+| **Image Processing** | Cloudflare Images (BiRefNet AI) |
+| **OCR** | RolmOCR via Fireworks AI / Google Vision |
+| **Vision AI** | Qwen3-VL via Fireworks AI |
+| **Runtime** | Bun |
+
+## Installation
+
+### Prerequisites
+
+- Node.js (via Bun runtime)
+- Cloudflare account with Workers, D1, R2, KV, and Images enabled
+- Fireworks AI API key (for RolmOCR and Qwen3-VL)
+
+### Setup
+
+1. Clone the repository:
+```bash
+git clone https://github.com/Gaius-1/shelfmind.git
+cd shelfmind
+```
+
+2. Install dependencies:
 ```bash
 bun install
-bun --bun run dev
 ```
 
-# Building For Production
-
-To build this application for production:
-
+3. Configure environment variables:
 ```bash
-bun --bun run build
+cp wrangler.jsonc.example wrangler.jsonc
+# Edit wrangler.jsonc with your Cloudflare bindings and API keys
 ```
 
-## Testing
-
-This project uses [Vitest](https://vitest.dev/) for testing. You can run the tests with:
-
+4. Run local development:
 ```bash
-bun --bun run test
+bun dev
 ```
 
-## Styling
-
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
-
-### Removing Tailwind CSS
-
-If you prefer not to use Tailwind CSS:
-
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Uninstall the packages: `bun install @tailwindcss/vite tailwindcss -D`
-
-## Linting & Formatting
-
-This project uses [Biome](https://biomejs.dev/) for linting and formatting. The following scripts are available:
-
-
+5. For production deployment:
 ```bash
-bun --bun run lint
-bun --bun run format
-bun --bun run check
+bun run deploy
 ```
 
+## Usage
 
-## Deploy to Cloudflare Workers
+### Core User Flow
 
-This project uses the Cloudflare Vite plugin (configured in `vite.config.ts`) and `wrangler.jsonc`:
+1. **Upload**: Submit batches of up to 20 images (JPG, PNG, WEBP) via the upload form
+2. **Extract**: Background pipeline processes images through five stages including background removal and Qwen2.5-VL extraction
+3. **Review**: Extracted records are presented in a review queue where users can perform inline edits and resolve duplicate flags
+4. **Export**: Cleaned data is exported as an Excel workbook (`predictions.xlsx`)
 
-1. Install Wrangler: `npm install -g wrangler`
-2. Authenticate: `wrangler login`
-3. Deploy: `npx wrangler deploy`
+### Navigation
 
-For production env vars, run `wrangler secret put MY_VAR` for each secret listed in `.env.example`. Public (non-secret) vars go in `wrangler.jsonc` under `vars`.
+The application is organized into four main sections:
 
-KV, D1, R2, and Durable Object bindings are configured in `wrangler.jsonc` — see https://developers.cloudflare.com/workers/wrangler/configuration/.
+- **Overview**: Dashboard with analytics and recent activity
+- **Processing**: Uploads, Processing Queue, Pipeline Visualizer, Review Queue
+- **Data**: Product Repository, Duplicates
+- **Exports**: Export Center with download history
 
+## Architecture
 
-## Shadcn
+ShelfMind runs entirely on Cloudflare's global edge network for high performance and low latency.
 
-Add components using the latest version of [Shadcn](https://ui.shadcn.com/).
+### Data Flow
 
-```bash
-pnpm dlx shadcn@latest add button
+```mermaid
+graph TD
+  subgraph "Client (Browser)"
+    A["UploadForm"] -- "POST /api/jobs" --> B["API Handler"]
+    I["ImdbTable"] -- "PATCH /api/records" --> J["Record Mutation"]
+  end
+
+  subgraph "Cloudflare Edge"
+    B -- "enqueue" --> C["Cloudflare Queue"]
+    C -- "trigger" --> D["processJob"]
+    D -- "orchestrates" --> E["Pipeline Stages"]
+    E -- "writes" --> F[("D1 SQLite DB")]
+    E -- "persists" --> G[("R2 Storage")]
+  end
+
+  subgraph "Data Output"
+    F -- "read" --> H["generateExcelExport"]
+    H -- "stream" --> K["/api/jobs/files"]
+  end
 ```
 
+### Pipeline Stages
 
-## T3Env
+1. **OCR on Original Image**: Watermark detection using RolmOCR or Google Vision
+2. **Background Removal**: Cloudflare Images BiRefNet segmentation
+3. **Qwen3-VL Extraction**: Maps clean product label to 13-column IMDB schema
+4. **Side-Aware Grouping**: Confidence-boosted aggregation with conflict guards
+5. **Database Write**: Merged records written to D1
+6. **Post-Job Duplicate Detection**: Asynchronous comparison against existing records
 
-- You can use T3Env to add type safety to your environment variables.
-- Add Environment variables to the `src/env.mjs` file.
-- Use the environment variables in your code.
+## Multi-Tenancy
 
-### Usage
+Every piece of data in ShelfMind is scoped to an organisation, enforced at the API layer. Data isolation is achieved through:
 
-```ts
-import { env } from "#/env";
+- D1 tables with `organisation_id` columns
+- R2 keys namespaced by organisation
+- KV cache keys scoped to organisation
+- Session-based organisation context
 
-console.log(env.VITE_APP_TITLE);
-```
+## Contributing
 
+Contributions are welcome!.
 
+## License
 
+[Specify your license here]
 
-
-## Setting up Better Auth
-
-1. Generate and set the `BETTER_AUTH_SECRET` environment variable in your `.env.local`:
-
-   ```bash
-   bunx --bun @better-auth/cli secret
-   ```
-
-2. Visit the [Better Auth documentation](https://www.better-auth.com) to unlock the full potential of authentication in your app.
-
-### Adding a Database (Optional)
-
-Better Auth can work in stateless mode, but to persist user data, add a database:
-
-```typescript
-// src/lib/auth.ts
-import { betterAuth } from "better-auth";
-import { Pool } from "pg";
-
-export const auth = betterAuth({
-  database: new Pool({
-    connectionString: process.env.DATABASE_URL,
-  }),
-  // ... rest of config
-});
-```
-
-Then run migrations:
-
-```bash
-bunx --bun @better-auth/cli migrate
-```
-
-
-
-## Routing
-
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
-
-### Adding A Route
-
-To add a new route to your application just add a new file in the `./src/routes` directory.
-
-TanStack will automatically generate the content of the route file for you.
-
-Now that you have two routes you can use a `Link` component to navigate between them.
-
-### Adding Links
-
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
-
-```tsx
-import { Link } from "@tanstack/react-router";
-```
-
-Then anywhere in your JSX you can use it like so:
-
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'My App' },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-})
-```
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from '@tanstack/react-start'
-
-const getServerTime = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  return new Date().toISOString()
-})
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState('')
-  
-  useEffect(() => {
-    getServerTime().then(setTime)
-  }, [])
-  
-  return <div>Server time: {time}</div>
-}
-```
-
-## API Routes
-
-You can create API routes by using the `server` property in your route definitions:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-import { json } from '@tanstack/react-start'
-
-export const Route = createFileRoute('/api/hello')({
-  server: {
-    handlers: {
-      GET: () => json({ message: 'Hello, World!' }),
-    },
-  },
-})
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-
-export const Route = createFileRoute('/people')({
-  loader: async () => {
-    const response = await fetch('https://swapi.dev/api/people')
-    return response.json()
-  },
-  component: PeopleComponent,
-})
-
-function PeopleComponent() {
-  const data = Route.useLoaderData()
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  )
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-# Demo files
-
-Files prefixed with `demo` can be safely deleted. They are there to provide a starting point for you to play around with the features you've installed.
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
+---
