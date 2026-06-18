@@ -65,7 +65,6 @@ const navGroups: NavGroup[] = [
     label: "Data",
     items: [
       { title: "Product Repository", url: "/dashboard/products", icon: PackageIcon },
-      { title: "Duplicates", url: "/dashboard/duplicates", icon: FilterIcon },
     ],
   },
 ]

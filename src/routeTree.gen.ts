@@ -17,7 +17,6 @@ import { Route as DashboardReviewQueueRouteImport } from './routes/dashboard/rev
 import { Route as DashboardProductsRouteImport } from './routes/dashboard/products'
 import { Route as DashboardProcessingQueueRouteImport } from './routes/dashboard/processing-queue'
 import { Route as DashboardExportsRouteImport } from './routes/dashboard/exports'
-import { Route as DashboardDuplicatesRouteImport } from './routes/dashboard/duplicates'
 import { Route as ApiStatsRouteImport } from './routes/api/stats'
 import { Route as ApiDebugDbRouteImport } from './routes/api/debug-db'
 import { Route as DashboardSettingsRouteImport } from './routes/_dashboard/settings'
@@ -81,11 +80,6 @@ const DashboardProcessingQueueRoute =
 const DashboardExportsRoute = DashboardExportsRouteImport.update({
   id: '/exports',
   path: '/exports',
-  getParentRoute: () => DashboardRoute,
-} as any)
-const DashboardDuplicatesRoute = DashboardDuplicatesRouteImport.update({
-  id: '/duplicates',
-  path: '/duplicates',
   getParentRoute: () => DashboardRoute,
 } as any)
 const ApiStatsRoute = ApiStatsRouteImport.update({
@@ -215,7 +209,6 @@ export interface FileRoutesByFullPath {
   '/settings': typeof DashboardSettingsRoute
   '/api/debug-db': typeof ApiDebugDbRoute
   '/api/stats': typeof ApiStatsRoute
-  '/dashboard/duplicates': typeof DashboardDuplicatesRoute
   '/dashboard/exports': typeof DashboardExportsRoute
   '/dashboard/processing-queue': typeof DashboardProcessingQueueRoute
   '/dashboard/products': typeof DashboardProductsRoute
@@ -248,7 +241,6 @@ export interface FileRoutesByTo {
   '/settings': typeof DashboardSettingsRoute
   '/api/debug-db': typeof ApiDebugDbRoute
   '/api/stats': typeof ApiStatsRoute
-  '/dashboard/duplicates': typeof DashboardDuplicatesRoute
   '/dashboard/exports': typeof DashboardExportsRoute
   '/dashboard/processing-queue': typeof DashboardProcessingQueueRoute
   '/dashboard/products': typeof DashboardProductsRoute
@@ -283,7 +275,6 @@ export interface FileRoutesById {
   '/_dashboard/settings': typeof DashboardSettingsRoute
   '/api/debug-db': typeof ApiDebugDbRoute
   '/api/stats': typeof ApiStatsRoute
-  '/dashboard/duplicates': typeof DashboardDuplicatesRoute
   '/dashboard/exports': typeof DashboardExportsRoute
   '/dashboard/processing-queue': typeof DashboardProcessingQueueRoute
   '/dashboard/products': typeof DashboardProductsRoute
@@ -319,7 +310,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/debug-db'
     | '/api/stats'
-    | '/dashboard/duplicates'
     | '/dashboard/exports'
     | '/dashboard/processing-queue'
     | '/dashboard/products'
@@ -352,7 +342,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/debug-db'
     | '/api/stats'
-    | '/dashboard/duplicates'
     | '/dashboard/exports'
     | '/dashboard/processing-queue'
     | '/dashboard/products'
@@ -386,7 +375,6 @@ export interface FileRouteTypes {
     | '/_dashboard/settings'
     | '/api/debug-db'
     | '/api/stats'
-    | '/dashboard/duplicates'
     | '/dashboard/exports'
     | '/dashboard/processing-queue'
     | '/dashboard/products'
@@ -487,13 +475,6 @@ declare module '@tanstack/react-router' {
       path: '/exports'
       fullPath: '/dashboard/exports'
       preLoaderRoute: typeof DashboardExportsRouteImport
-      parentRoute: typeof DashboardRoute
-    }
-    '/dashboard/duplicates': {
-      id: '/dashboard/duplicates'
-      path: '/duplicates'
-      fullPath: '/dashboard/duplicates'
-      preLoaderRoute: typeof DashboardDuplicatesRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/api/stats': {
@@ -672,7 +653,6 @@ const DashboardReviewQueueRouteWithChildren =
   DashboardReviewQueueRoute._addFileChildren(DashboardReviewQueueRouteChildren)
 
 interface DashboardRouteChildren {
-  DashboardDuplicatesRoute: typeof DashboardDuplicatesRoute
   DashboardExportsRoute: typeof DashboardExportsRoute
   DashboardProcessingQueueRoute: typeof DashboardProcessingQueueRoute
   DashboardProductsRoute: typeof DashboardProductsRoute
@@ -683,7 +663,6 @@ interface DashboardRouteChildren {
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
-  DashboardDuplicatesRoute: DashboardDuplicatesRoute,
   DashboardExportsRoute: DashboardExportsRoute,
   DashboardProcessingQueueRoute: DashboardProcessingQueueRoute,
   DashboardProductsRoute: DashboardProductsRoute,
