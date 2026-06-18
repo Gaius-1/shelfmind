@@ -503,7 +503,12 @@ export async function processJob(
 			// character height, which is well within reliable read range.
 			// We do this BEFORE the full-image OCR pass so the cleanest possible crop
 			// feeds watermark detection — not as a last resort.
+			//
+			// OPTIMIZATION: Only use OCR (cheap) for edge scanning. The expensive Qwen VL
+			// waternark fallback is only called once on the bottom edge at the very end
+			// if all OCR attempts failed — saving up to 3 VL calls per image.
 			let watermarkData: any = null;
+			let bestEdgeOcr = ""; // best edge OCR text for watermark parsing
 			if (env?.IMAGES) {
 				const margins: ("bottom" | "top" | "left" | "right")[] = ["bottom", "top", "left", "right"];
 				for (const margin of margins) {
@@ -517,15 +522,16 @@ export async function processJob(
 						} else if (ocrConfig.provider === "google") {
 							croppedOcr = await extractWithGoogleVision(croppedBase64, env, null, `${fileName}_${margin}`);
 						}
-						if (!croppedOcr) {
-							croppedOcr = await extractWatermarkWithQwen(croppedBase64, env);
+						// Track the best OCR result for later fallback
+						if (croppedOcr && croppedOcr.length > bestEdgeOcr.length) {
+							bestEdgeOcr = croppedOcr;
 						}
 						if (croppedOcr) {
 							for (const line of croppedOcr.split('\n')) {
 								const parsed = parseWatermark(line);
 								if (parsed?.auditId) {
 									watermarkData = parsed;
-									await reporter.addLog("watermark", `[${fileName}] Watermark found on ${margin} edge (480px×2× crop): ${parsed.auditId}`, "success");
+									await reporter.addLog("watermark", `[${fileName}] Watermark found on ${margin} edge (OCR): ${parsed.auditId}`, "success");
 									break;
 								}
 							}
@@ -534,6 +540,29 @@ export async function processJob(
 						console.error(`[Pipeline] Margin crop flow failed for ${margin}:`, cropErr);
 					}
 					if (watermarkData) break;
+				}
+				// If OCR didn't find a watermark on any edge, fall back to Qwen VL
+				// on the bottom crop only (most likely edge, one call max).
+				if (!watermarkData && bestEdgeOcr.length < 8) {
+					try {
+						const croppedBuffer = await cropImageMargin(buffer, "bottom", env);
+						if (croppedBuffer !== buffer) {
+							const croppedBase64 = Buffer.from(croppedBuffer).toString("base64");
+							const qwenResult = await extractWatermarkWithQwen(croppedBase64, env);
+							if (qwenResult) {
+								for (const line of qwenResult.split('\n')) {
+									const parsed = parseWatermark(line);
+									if (parsed?.auditId) {
+										watermarkData = parsed;
+										await reporter.addLog("watermark", `[${fileName}] Watermark found on bottom edge (Qwen-VL fallback): ${parsed.auditId}`, "success");
+										break;
+									}
+								}
+							}
+						}
+					} catch (qwenErr) {
+						console.error(`[Pipeline] Qwen VL watermark fallback failed:`, qwenErr);
+					}
 				}
 				if (!watermarkData) {
 					await reporter.addLog("watermark", `[${fileName}] No watermark found in any edge crop — will fall back to Qwen imageTag`, "info");
@@ -571,8 +600,10 @@ export async function processJob(
             const cleanBuffer = await removeBackground(buffer, env);
             await reporter.addLog("bgremoval", `[${fileName}] Product isolated from shelf background`, "success");
 
-            // Re-run OCR on the clean buffer for better field text accuracy (less neighbor-label noise)
-            if (env?.IMAGES && ocrConfig.provider !== "none") {
+            // Re-run OCR on the clean buffer only if original OCR was suspiciously short
+            // (e.g., text was obscured by background clutter). Saves ~1 OCR call per image
+            // when the original extraction was already good.
+            if (env?.IMAGES && ocrConfig.provider !== "none" && ocrText.length < 20) {
                 const base64Clean = Buffer.from(cleanBuffer).toString("base64");
                 let cleanOcr = "";
                 if (ocrConfig.provider === "rolmocr") {
@@ -580,8 +611,8 @@ export async function processJob(
                 } else if (ocrConfig.provider === "google") {
                     cleanOcr = await extractWithGoogleVision(base64Clean, env, null, `${fileName}_clean`);
                 }
-                // Merge: prefer clean OCR if it returned more content, otherwise keep original
-                if (cleanOcr && cleanOcr.length > ocrText.length) {
+                // Use clean OCR if it returned substantially more content
+                if (cleanOcr && cleanOcr.length > ocrText.length + 10) {
                     ocrText = cleanOcr;
                     await reporter.addLog("bgremoval", `[${fileName}] Clean OCR produced richer text — using background-removed result`, "success");
                 }
