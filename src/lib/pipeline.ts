@@ -286,7 +286,7 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            model: "qwen3-vl-235b-a22b-instruct",
+            model: "qwen-vl-max-latest",
             messages: [
                 {
                     role: "user",
@@ -374,7 +374,7 @@ Return ONLY the exact text printed on the image margin. If you cannot see any re
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                model: "qwen3-vl-235b-a22b-instruct",
+                model: "qwen-vl-max-latest",
                 messages: [
                     {
                         role: "user",
