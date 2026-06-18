@@ -51,7 +51,7 @@ export function getOcrProvider(env: any = null): {
     model?: string;
 } {
     // 1. Check for Fireworks API key specifically meant for RolmOCR
-    const fireworksKey = env?.FIREWORKS_API_KEY || (typeof process !== "undefined" ? process.env.FIREWORKS_API_KEY : undefined) || "fw_BFtCDgYTnzgBJvyCYkQ8us";
+    const fireworksKey = env?.FIREWORKS_API_KEY || (typeof process !== "undefined" ? process.env.FIREWORKS_API_KEY : undefined);
     const hasExplicitRolmOcr = env?.ROLMOCR_MODEL || env?.REDUCTO_MODEL || (typeof process !== "undefined" ? (process.env.ROLMOCR_MODEL || process.env.REDUCTO_MODEL) : undefined);
     if (fireworksKey && hasExplicitRolmOcr) {
         return {
@@ -242,8 +242,8 @@ async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrTe
     const base64Image = Buffer.from(imageBuffer).toString("base64");
     
     // Read from Cloudflare env bindings if available, otherwise fallback to process.env
-    const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined) || "sk-ws-H.IPDXPL.3Rhx.MEUCIG_trMGvdTN7djTaY4sTk-Mbh7dqwhSlROnqekL9Za6QAiEA1QI7Nmc06KMMqdN4tL8Zl1rAYJMQiKS3z-zszZLvkXk";
-    const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-e8idycj2w4qgstsm.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1";
+    const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined);
+    const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-e8idycj2w4qgstsm.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
 
     if (!apiKey) {
         console.error("[Qwen3-VL] Missing QWEN_API_KEY in environment");
@@ -305,8 +305,8 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content ?? "";
-
+    const content = data.choices[0].message.content;
+    
     try {
         let jsonStr = content;
 
