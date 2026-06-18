@@ -1,4 +1,3 @@
-import * as React from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card.tsx'
 import { Database, ShieldAlert, AlertCircle, Copy, Layers } from 'lucide-react'
 import { cn } from '#/lib/utils.ts'

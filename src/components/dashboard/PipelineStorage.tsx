@@ -1,5 +1,3 @@
-import * as React from 'react'
-import { Card, CardContent } from '#/components/ui/card.tsx'
 import { Pie, PieChart, Label } from 'recharts'
 import { ChartContainer, type ChartConfig } from '#/components/ui/chart.tsx'
 import { Frame, FramePanel } from '#/components/reui/frame.tsx'

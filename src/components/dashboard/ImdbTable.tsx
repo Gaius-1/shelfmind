@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -207,13 +207,6 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
   // Stable data reference — prevents new array identity on every parent render
   // which would cause the table to reset state on every re-render
   const data = useMemo(() => records, [records])
-
-  // Manually reset to page 0 whenever the search query or underlying dataset changes.
-  // We use autoResetPageIndex: false below so TanStack doesn't do this automatically
-  // (which can cause double-resets and flickering).
-  useEffect(() => {
-    setPagination(prev => ({ ...prev, pageIndex: 0 }))
-  }, [globalFilter, data])
   
   // Define visibility for columns. We use useMemo to map exactly what should be visible by default.
   // We'll manage column visibility in table state, but rely on Tailwind for mobile hiding.
@@ -375,9 +368,8 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
     columns: tableColumns,
     data,
     getRowId: (row: any) => row.id,
-    // We manage page resets explicitly via useEffect above so the table
-    // never double-resets or flickers when filters/data change.
-    autoResetPageIndex: false,
+    // Let TanStack handle page resets automatically when filters or data change.
+    autoResetPageIndex: true,
     state: {
       sorting,
       columnVisibility,

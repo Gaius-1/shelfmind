@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { initialNodes, initialEdges, type PipelineState, type LogEntry, type NodeStatus } from '../types/pipeline'
+import { initialNodes, initialEdges, type PipelineState } from '../types/pipeline'
 
 // Fetch the initial state
 const fetchInitialState = async (jobId: string): Promise<PipelineState> => {

@@ -1,4 +1,3 @@
-import * as React from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { authClient } from '#/lib/auth-client.ts'
 import { useRecord } from '#/hooks/useRecord.ts'

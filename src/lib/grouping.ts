@@ -198,9 +198,21 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 					: false;
 
 				if (idDist === 0) {
-					// Exact same audit ID — merge ONLY if the watermark description and product name agree.
-					// Different watermark descriptions = different products sharing the same audit slot.
-					if (auditTagDescConflict || auditNameConflict || auditBarcodeConflict) continue;
+					// Exact same audit ID — check if there is a watermark description conflict
+					if (auditTagDescConflict) continue;
+
+					// If they are confirmed to be the same product (either by matching watermark descriptions or matching suffix):
+					const hasSameSuffix = dA && dB && dA === dB;
+					const hasMatchingWatermarkDesc = descA.length > 8 && descB.length > 8 && !auditTagDescConflict;
+					
+					if (hasSameSuffix || hasMatchingWatermarkDesc) {
+						// Confirmed same product! Merge unconditionally (AI-extracted barcode/name conflicts are ignored as hallucinations)
+						foundKey = key;
+						break;
+					}
+
+					// Otherwise, fall back to strict validation (if we can't verify they are the same product slot via watermark text/suffix)
+					if (auditNameConflict || auditBarcodeConflict) continue;
 					foundKey = key; break;
 				}
 

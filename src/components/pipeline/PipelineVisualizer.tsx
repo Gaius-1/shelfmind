@@ -27,7 +27,7 @@ export function PipelineVisualizer({ jobId }: { jobId: string }) {
     }
   }, [data, setNodes, setEdges])
 
-  const onNodeClick: NodeMouseHandler = useCallback((event, node) => {
+  const onNodeClick: NodeMouseHandler = useCallback((_event, node) => {
     setSelectedNodeId(node.id)
   }, [])
 

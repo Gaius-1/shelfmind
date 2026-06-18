@@ -1,4 +1,3 @@
-import * as React from 'react'
 import { useNavigate, Link } from '@tanstack/react-router'
 import { Frame, FramePanel } from '#/components/reui/frame.tsx'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table.tsx'

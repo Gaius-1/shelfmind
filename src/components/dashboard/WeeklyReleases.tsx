@@ -1,4 +1,3 @@
-import * as React from 'react'
 import { Frame, FramePanel } from '#/components/reui/frame.tsx'
 import { Badge } from '#/components/reui/badge.tsx'
 import { HugeiconsIcon } from '@hugeicons/react'

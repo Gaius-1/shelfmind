@@ -184,18 +184,18 @@ async function cropImageMargin(
 		if (margin === "bottom") {
 			cropOptions.gravity = { x: 0.5, y: 1.0 }; // anchor to very bottom edge
 			cropOptions.width = 3200;
-			cropOptions.height = 960;
+			cropOptions.height = 240;
 		} else if (margin === "top") {
 			cropOptions.gravity = { x: 0.5, y: 0.0 }; // anchor to very top edge
 			cropOptions.width = 3200;
-			cropOptions.height = 960;
+			cropOptions.height = 240;
 		} else if (margin === "left") {
 			cropOptions.gravity = { x: 0.0, y: 0.5 }; // anchor to very left edge
-			cropOptions.width = 960;
+			cropOptions.width = 240;
 			cropOptions.height = 3200;
 		} else if (margin === "right") {
 			cropOptions.gravity = { x: 1.0, y: 0.5 }; // anchor to very right edge
-			cropOptions.width = 960;
+			cropOptions.width = 240;
 			cropOptions.height = 3200;
 		}
 		const croppedTransform = env.IMAGES.transform(new Response(buffer), cropOptions);

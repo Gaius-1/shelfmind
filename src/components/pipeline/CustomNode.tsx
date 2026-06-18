@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
 	Frame,
@@ -18,7 +18,6 @@ import {
 	TaskDone01Icon,
 	Database01Icon,
 	SearchList01Icon,
-	CheckListIcon,
 	PackageIcon,
 } from "@hugeicons/core-free-icons";
 
@@ -35,7 +34,6 @@ const iconMap: Record<string, any> = {
 };
 
 import { Cloudflare } from "#/components/ui/svgs/cloudflare.tsx";
-import { Sqlite } from "#/components/ui/svgs/sqlite.tsx";
 import { QwenLight } from "#/components/ui/svgs/qwenLight.tsx";
 
 export type CustomNodeData = {

@@ -1,11 +1,9 @@
-import * as React from 'react'
 import { useState, useEffect } from 'react'
-import { useNavigate } from '@tanstack/react-router'
 import { Button } from '#/components/ui/button.tsx'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '#/components/ui/card.tsx'
 import { Input } from '#/components/ui/input.tsx'
 import { Label } from '#/components/ui/label.tsx'
-import { IMDB_COLUMNS, EXCEL_HEADERS, type ImdbColumnName } from '#/types/imdb.ts'
+import { IMDB_COLUMNS, EXCEL_HEADERS } from '#/types/imdb.ts'
 import { useRecordMutation } from '#/hooks/useRecordMutation.ts'
 import { Spinner } from '#/components/spinner.tsx'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -28,7 +26,6 @@ interface RecordDetailProps {
 }
 
 export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
-  const navigate = useNavigate()
   
   // Local form state for the 13 fields
   const [formFields, setFormFields] = useState<Record<string, string>>(() => {

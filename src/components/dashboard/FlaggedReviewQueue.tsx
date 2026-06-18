@@ -1,7 +1,5 @@
-import * as React from 'react'
 import { Frame, FramePanel } from '#/components/reui/frame.tsx'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table.tsx'
-import { Badge } from '#/components/reui/badge.tsx'
 import { cn } from '#/lib/utils.ts'
 import { useProducts } from '#/hooks/useProducts.ts'
 import { useNavigate } from '@tanstack/react-router'
@@ -55,7 +53,7 @@ export function FlaggedReviewQueue({ orgId }: FlaggedReviewQueueProps) {
                   <TableRow 
                     key={record.id} 
                     className="border-border/50 group cursor-pointer hover:bg-muted/30 transition-colors"
-                    onClick={() => navigate({ to: '/review-queue/$recordId', params: { recordId: record.id } })}
+                    onClick={() => navigate({ to: '/dashboard/review-queue/$recordId', params: { recordId: record.id } })}
                   >
                     <TableCell className="font-medium">
                       <div className="truncate max-w-[120px] 2xl:max-w-[160px]" title={record.ITEM_NAME}>

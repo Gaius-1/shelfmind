@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Sheet,
   SheetContent,
@@ -27,7 +27,7 @@ export function NodeDetailsPanel({ node, logs, onClose }: NodeDetailsPanelProps)
   // Keep logs open by default. If a user manually closes them, that's fine,
   // but if the node hits an error, we force them back open.
   useEffect(() => {
-    if (node?.data.status === 'error') {
+    if (node?.data.status === 'failed') {
       setIsLogsExpanded(true)
     }
   }, [node?.id, node?.data.status])
@@ -43,7 +43,7 @@ export function NodeDetailsPanel({ node, logs, onClose }: NodeDetailsPanelProps)
                 <div className={`px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wider
                   ${node.data.status === 'completed' ? 'bg-success/20 text-success-foreground' : 
                     node.data.status === 'active' ? 'bg-primary/20 text-primary-foreground animate-pulse' : 
-                    node.data.status === 'error' ? 'bg-destructive/20 text-destructive font-bold animate-pulse' :
+                    node.data.status === 'failed' ? 'bg-destructive/20 text-destructive font-bold animate-pulse' :
                     'bg-muted text-muted-foreground'}`}>
                   {node.data.status}
                 </div>

@@ -1,9 +1,8 @@
-import * as React from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '#/components/ui/card.tsx'
 import { Button } from '#/components/ui/button.tsx'
 import { useDuplicateAction } from '#/hooks/useDuplicateAction.ts'
 import { Spinner } from '#/components/spinner.tsx'
-import { AlertCircle, CheckCircle, Trash2, XCircle, RefreshCw, Barcode, Scale, Building, Tag, Layers } from 'lucide-react'
+import { AlertCircle, CheckCircle, XCircle, Barcode, Scale, Building, Tag, Layers } from 'lucide-react'
 import { cn } from '#/lib/utils.ts'
 
 export interface DuplicatePair {
@@ -163,7 +162,7 @@ export function DuplicateCard({ pair, orgId }: DuplicateCardProps) {
             className="text-xs font-bold text-neutral-500 hover:text-rose-600 dark:hover:text-rose-400 h-9 rounded-xl border border-neutral-200 dark:border-neutral-800/80 bg-white dark:bg-neutral-900 px-4"
           >
             {mutation.isPending && mutation.variables?.action === 'DISMISS' ? (
-              <Spinner size="xs" className="mr-1.5 text-neutral-500" />
+              <Spinner size="sm" className="mr-1.5 text-neutral-500" />
             ) : (
               <XCircle className="size-4 mr-1.5" />
             )}
@@ -177,7 +176,7 @@ export function DuplicateCard({ pair, orgId }: DuplicateCardProps) {
             className="text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-600 dark:hover:bg-indigo-500 h-9 rounded-xl px-4 flex items-center gap-1.5 shadow-lg shadow-indigo-600/10 dark:shadow-indigo-500/10"
           >
             {mutation.isPending && mutation.variables?.action === 'MERGE' ? (
-              <Spinner size="xs" className="mr-1.5 text-white" />
+              <Spinner size="sm" className="mr-1.5 text-white" />
             ) : (
               <CheckCircle className="size-4 mr-1.5" />
             )}
