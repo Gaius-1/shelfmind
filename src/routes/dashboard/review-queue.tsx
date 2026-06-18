@@ -1,13 +1,16 @@
+// import * as React from 'react'
 import { useMemo } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { authClient } from '#/lib/auth-client.ts'
 import { useImdbRecords } from '#/hooks/useImdbRecords.ts'
 import { useProducts } from '#/hooks/useProducts.ts'
+import { useJobs } from '#/hooks/useJobs.ts'
 import { ImdbTable } from '#/components/dashboard/ImdbTable.tsx'
 import { Spinner } from '#/components/spinner.tsx'
-import { AlertCircle, FileCheck, ShieldAlert, BadgeAlert, FileSpreadsheet } from 'lucide-react'
+import { AlertCircle, FileCheck, ShieldAlert, BadgeAlert } from 'lucide-react'
+// import { cn } from '#/lib/utils.ts'
 import { Frame, FramePanel } from '#/components/reui/frame.tsx'
-import { Button } from '#/components/ui/button.tsx'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select.tsx'
 
 interface ReviewQueueSearch {
   jobId?: string
@@ -49,6 +52,12 @@ interface ContentProps {
 }
 
 function ReviewQueueContent({ orgId, jobId }: ContentProps) {
+  const navigate = useNavigate()
+  
+  // Fetch jobs for the dropdown selection filter
+  const { data: jobsData } = useJobs(orgId)
+  const completedJobs = (jobsData?.jobs || []).filter((j: any) => j.status === 'COMPLETED')
+
   // Condition 1: Specific Job ID selected
   const jobQuery = useImdbRecords(orgId, jobId || 'dummy-no-job')
   // Condition 2: No Job ID selected, show all flagged products
@@ -80,6 +89,13 @@ function ReviewQueueContent({ orgId, jobId }: ContentProps) {
     }
   }, [records])
 
+  const handleJobChange = (val: string) => {
+    navigate({
+      to: '/dashboard/review-queue',
+      search: val && val !== 'all' ? { jobId: val } : {},
+    })
+  }
+
   return (
     <div className="flex flex-col gap-6 p-6 lg:p-8 max-w-7xl mx-auto w-full">
       {/* Header section */}
@@ -93,13 +109,25 @@ function ReviewQueueContent({ orgId, jobId }: ContentProps) {
           </p>
         </div>
 
-        {/* Export button */}
-        <Button asChild className="h-10 rounded-xl shadow-xs">
-          <a href="/dashboard/exports">
-            <FileSpreadsheet className="size-4" />
-            Export Results
-          </a>
-        </Button>
+        {/* Job Ingestion selector dropdown */}
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">
+            Filter Ingestion:
+          </label>
+          <Select value={jobId || 'all'} onValueChange={handleJobChange}>
+            <SelectTrigger className="w-[240px] bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800/80 rounded-xl shadow-xs">
+              <SelectValue placeholder="All Flagged Products" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Flagged Products</SelectItem>
+              {completedJobs.map((job: any) => (
+                <SelectItem key={job.id} value={job.id}>
+                  Batch #{job.id.substring(0, 8)} ({job.imageCount} imgs)
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Metrics Summary Bar */}
