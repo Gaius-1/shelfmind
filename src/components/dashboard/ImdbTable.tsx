@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -8,6 +8,7 @@ import {
   getFilteredRowModel,
   type SortingState,
   type ColumnDef,
+  type PaginationState,
 } from '@tanstack/react-table'
 
 import { IMDB_COLUMNS, EXCEL_HEADERS, type ImdbColumnName } from '#/types/imdb.ts'
@@ -198,6 +199,21 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 25,
+  })
+
+  // Stable data reference — prevents new array identity on every parent render
+  // which would cause the table to reset state on every re-render
+  const data = useMemo(() => records, [records])
+
+  // Manually reset to page 0 whenever the search query or underlying dataset changes.
+  // We use autoResetPageIndex: false below so TanStack doesn't do this automatically
+  // (which can cause double-resets and flickering).
+  useEffect(() => {
+    setPagination(prev => ({ ...prev, pageIndex: 0 }))
+  }, [globalFilter, data])
   
   // Define visibility for columns. We use useMemo to map exactly what should be visible by default.
   // We'll manage column visibility in table state, but rely on Tailwind for mobile hiding.
@@ -357,23 +373,21 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
 
   const table = useReactTable({
     columns: tableColumns,
-    data: records,
+    data,
     getRowId: (row: any) => row.id,
-    autoResetPageIndex: true,
-    initialState: {
-      pagination: {
-        pageIndex: 0,
-        pageSize: 25,
-      },
-    },
+    // We manage page resets explicitly via useEffect above so the table
+    // never double-resets or flickers when filters/data change.
+    autoResetPageIndex: false,
     state: {
       sorting,
       columnVisibility,
       globalFilter,
+      pagination,
     },
     onSortingChange: setSorting,
     onColumnVisibilityChange: setColumnVisibility,
     onGlobalFilterChange: setGlobalFilter,
+    onPaginationChange: setPagination,
     globalFilterFn: 'includesString',
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
