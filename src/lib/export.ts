@@ -73,18 +73,10 @@ export async function generateExcelExport(
   // Freeze top row
   worksheet.views = [{ state: 'frozen', xSplit: 0, ySplit: 1, activeCell: 'A2' }]
 
-  // Auto-fit column widths based on longest cell content
+  // Set column widths based on header length (more reliable than eachCell in Workers)
   worksheet.columns.forEach(column => {
-    let maxLen = 0
-    if (column.eachCell) {
-      column.eachCell({ includeEmpty: true }, cell => {
-        const val = cell.value ? String(cell.value) : ''
-        if (val.length > maxLen) {
-          maxLen = val.length
-        }
-      })
-    }
-    column.width = Math.max(12, Math.min(45, maxLen + 4))
+    const headerLen = column.header ? String(column.header).length : 12
+    column.width = Math.max(14, Math.min(40, headerLen + 6))
   })
 
   // Write workbook to buffer

@@ -16,7 +16,8 @@ const routeOptions: any = {
           // 2. Extract query parameters
           const url = new URL(request.url)
           const bucket = url.searchParams.get('bucket')
-          const key = decodeURIComponent(url.searchParams.get('key') || '')
+          // searchParams.get() already decodes URI components, no need for decodeURIComponent
+          const key = url.searchParams.get('key') || ''
 
           if (!bucket || !key) {
             return new Response('Missing parameters', { status: 400 })
