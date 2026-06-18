@@ -12,7 +12,6 @@ import { RecentExtractionJobs } from '#/components/dashboard/RecentExtractionJob
 // import { PipelineStorage } from '#/components/dashboard/PipelineStorage.tsx'
 import { Skeleton } from '#/components/ui/skeleton.tsx'
 import { FlaggedReviewQueue } from '#/components/dashboard/FlaggedReviewQueue.tsx'
-import { GlobalActivityStream } from '#/components/dashboard/GlobalActivityStream.tsx'
 
 export const Route = createFileRoute('/dashboard/')({
   component: DashboardHome,
@@ -126,10 +125,7 @@ function DashboardContent({ orgId }: DashboardContentProps) {
           <FlaggedReviewQueue orgId={orgId} />
         </div>
 
-        {/* Full Bottom: Global Activity Stream */}
-        <div className="xl:col-span-12 min-h-[300px]">
-          <GlobalActivityStream activeJobs={recentJobsList.filter(j => j.status === 'PROCESSING' || j.status === 'PENDING')} />
-        </div>
+
 
       </div>
     </div>
@@ -170,10 +166,7 @@ function DashboardSkeleton() {
           </div>
         </div>
 
-        {/* Full Bottom */}
-        <div className="xl:col-span-12 h-[300px]">
-          <Skeleton className="w-full h-full rounded-[2rem]" />
-        </div>
+
       </div>
     </div>
   )
