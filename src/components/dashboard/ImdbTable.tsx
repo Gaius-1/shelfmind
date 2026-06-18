@@ -252,7 +252,7 @@ function RecordDetailDialogContent({ recordId, orgId, jobId, recordIds, currentI
                 navigate({
                   to: '/dashboard/review-queue/$recordId',
                   params: { recordId },
-                  state: { recordIds, currentIndex },
+                  state: { recordIds, currentIndex } as any,
                 })
               }}
               className="rounded-xl text-indigo-600 dark:text-indigo-400 gap-1.5"
@@ -261,6 +261,25 @@ function RecordDetailDialogContent({ recordId, orgId, jobId, recordIds, currentI
               Open Full Detail
             </Button>
           </div>
+        </div>
+      )}
+
+      {!hasNavigation && (
+        <div className="flex justify-center border-t border-neutral-200 dark:border-neutral-800 mt-6 pt-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              navigate({
+                to: '/dashboard/review-queue/$recordId',
+                params: { recordId },
+              })
+            }}
+            className="rounded-xl text-indigo-600 dark:text-indigo-400 gap-1.5"
+          >
+            <ExternalLink className="size-3.5" />
+            Open Full Detail
+          </Button>
         </div>
       )}
 

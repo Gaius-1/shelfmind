@@ -94,7 +94,7 @@ function RecordDetailContent({ orgId, recordId, locationState }: ContentProps) {
                   navigate({
                     to: '/dashboard/review-queue/$recordId',
                     params: { recordId: recordIds![currentIndex! - 1] },
-                    state: { recordIds, currentIndex: currentIndex! - 1 },
+                    state: { recordIds, currentIndex: currentIndex! - 1 } as any,
                   })
                 }
               }}
@@ -115,7 +115,7 @@ function RecordDetailContent({ orgId, recordId, locationState }: ContentProps) {
                   navigate({
                     to: '/dashboard/review-queue/$recordId',
                     params: { recordId: recordIds![currentIndex! + 1] },
-                    state: { recordIds, currentIndex: currentIndex! + 1 },
+                    state: { recordIds, currentIndex: currentIndex! + 1 } as any,
                   })
                 }
               }}
