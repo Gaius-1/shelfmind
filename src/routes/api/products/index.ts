@@ -52,6 +52,7 @@ const routeOptions: any = {
             'PACKAGING_TYPE', 'COUNTRY', 'VARIANT', 'TYPE',
             'FRAGRANCE_FLAVOR', 'PROMOTION', 'ADDONS', 'TAGLINE',
             'confidence', 'createdAt',
+            'productGroupKey',
           ]
 
           // 4. Build filters
@@ -68,6 +69,7 @@ const routeOptions: any = {
                 like(imdbRecords.BRAND, pattern),
                 like(imdbRecords.BARCODE, pattern),
                 like(imdbRecords.MANUFACTURER, pattern),
+                like(imdbRecords.productGroupKey, pattern),
               )
             )
           }

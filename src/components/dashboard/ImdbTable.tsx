@@ -348,6 +348,7 @@ export function ImdbTable({
       BRAND: true,
       WEIGHT: true,
       confidence: true,
+      productGroupKey: true,
       actions: true,
     }
     IMDB_COLUMNS.forEach((col) => {
@@ -469,7 +470,45 @@ export function ImdbTable({
       enableSorting: true,
     })
 
-    // 5. Actions Column
+    // 5. Watermark / Group Key Column (imageTag from pipeline)
+    cols.push({
+      id: 'productGroupKey',
+      header: 'IMAGE TAG',
+      accessorKey: 'productGroupKey',
+      cell: ({ getValue }: any) => {
+        const val = getValue() as string
+        if (!val) {
+          return (
+            <span className="text-[10px] text-neutral-300 dark:text-neutral-600 italic">
+              No watermark
+            </span>
+          )
+        }
+        // Show the audit ID portion prominently
+        const auditMatch = val.match(/^([A-Z0-9_]+)/)
+        const auditId = auditMatch ? auditMatch[1] : ''
+        const productDesc = auditId ? val.slice(auditId.length).trim() : val
+
+        return (
+          <div className="flex flex-col gap-0.5 min-w-0 max-w-[220px]">
+            {auditId && (
+              <span className="font-mono text-[11px] font-bold text-indigo-600 dark:text-indigo-400 truncate" title={auditId}>
+                {auditId}
+              </span>
+            )}
+            {productDesc && (
+              <span className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate leading-tight" title={val}>
+                {productDesc}
+              </span>
+            )}
+          </div>
+        )
+      },
+      size: 200,
+      enableSorting: true,
+    })
+
+    // 6. Actions Column
     cols.push({
       id: 'actions',
       header: 'ACTIONS',

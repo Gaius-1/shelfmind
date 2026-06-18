@@ -1,4 +1,4 @@
-import { useMemo, useState, useDeferredValue } from 'react'
+import { useMemo, useState, useDeferredValue, useEffect } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import type { PaginationState } from '@tanstack/react-table'
 import { authClient } from '#/lib/auth-client.ts'
@@ -55,7 +55,17 @@ function ReviewQueueContent({ orgId, jobId }: ContentProps) {
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 25 })
   const [searchInput, setSearchInput] = useState('')
   const search = useDeferredValue(searchInput)
-  
+
+  // Reset to page 1 when search or job filter changes — prevents requesting
+  // a page that no longer exists after the filtered result set has changed.
+  useEffect(() => {
+    setPagination(prev => ({ ...prev, pageIndex: 0 }))
+  }, [searchInput])
+
+  useEffect(() => {
+    setPagination(prev => ({ ...prev, pageIndex: 0 }))
+  }, [jobId])
+
   // Fetch jobs for the dropdown selection filter
   const { data: jobsData } = useJobs(orgId)
   const completedJobs = (jobsData?.jobs || []).filter((j: any) => j.status === 'COMPLETED')
