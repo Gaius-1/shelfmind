@@ -24,9 +24,7 @@ import {
   TaskDone01Icon,
   CheckListIcon,
   PackageIcon,
-  // FilterIcon,
-  // FileExportIcon,
-  // Settings05Icon,
+  FileExportIcon,
   SentIcon,
   BookHeadphonesIcon,
 } from "@hugeicons/core-free-icons"
@@ -65,6 +63,7 @@ const navGroups: NavGroup[] = [
     label: "Data",
     items: [
       { title: "Product Repository", url: "/dashboard/products", icon: PackageIcon },
+      { title: "Export Center", url: "/dashboard/exports", icon: FileExportIcon },
     ],
   },
 ]

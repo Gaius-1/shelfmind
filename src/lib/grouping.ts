@@ -29,7 +29,7 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 	//       falsely matching short non-audit text like "R123" or "BLUE456" as audit IDs.
 	const getBaseAuditId = (tag?: string): string => {
 		if (!tag) return "";
-		const match = tag.trim().match(/^([A-Z]{0,10}\d{3,})(?:[_. -]([A-Z]))?(?:[^A-Z\d]|$)/i);
+		const match = tag.trim().match(/^([A-Z]{0,10}\d{3,})(?:[_.-]([A-Z]))?(?:[^A-Z\d]|$)/i);
 		if (match) {
 			const mainId = match[1].toUpperCase();
 			// Reject short IDs that are unlikely to be real audit visit IDs
@@ -198,8 +198,11 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 				// this is the most reliable signal we have from the raw data.
 				const descA = getTagDescription(entry.imageTag);
 				const descB = getTagDescription(existing.imageTag);
+				// Compare a wider window (60 chars vs 30) to catch cases where the first 30 chars
+				// are identical metadata (e.g. "-retailaudit-productimages-mar-26...") but the
+				// actual product description diverges after the date stamp.
 				const auditTagDescConflict = descA.length > 8 && descB.length > 8
-					? levenshtein(descA.substring(0, 30), descB.substring(0, 30)) > 10
+					? levenshtein(descA.substring(0, 60), descB.substring(0, 60)) > 15
 					: false;
 
 				if (idDist === 0) {
@@ -211,6 +214,16 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 					const hasMatchingWatermarkDesc = descA.length > 8 && descB.length > 8 && !auditTagDescConflict;
 					
 					if (hasSameSuffix || hasMatchingWatermarkDesc) {
+						// Check brand consistency — different products sharing a project-level reference tag
+						// (e.g. "D7513482-47 ..." used for an entire audit batch) should NOT be merged.
+						const brandConflict = brand && extBrand && brand !== extBrand
+							? !(brand.includes(extBrand) || extBrand.includes(brand) || brand.length <= 2 || extBrand.length <= 2)
+							: false;
+						if (brandConflict) {
+							// Brands disagree — fall through to strict validation
+							if (auditNameConflict || auditBarcodeConflict) continue;
+							foundKey = key; break;
+						}
 						// Confirmed same product! Merge unconditionally (AI-extracted barcode/name conflicts are ignored as hallucinations)
 						foundKey = key;
 						break;
@@ -221,7 +234,7 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 					foundKey = key; break;
 				}
 
-				if (idDist === 1) {
+				if (idDist >= 1 && idDist <= 2) {
 					// Check if they are consecutive numbers (which means different products/visits)
 					const digitsA = cleanA.replace(/\D/g, "");
 					const digitsB = cleanB.replace(/\D/g, "");
@@ -233,12 +246,17 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 							continue;
 						}
 					}
-					// OCR digit error — only merge if watermark description and names also agree
-					if (auditTagDescConflict || auditNameConflict || auditBarcodeConflict) continue;
+					// If the printed watermark descriptions agree, trust the watermark over noisy AI extraction.
+					// The watermark is physically printed on the package — it's the most reliable signal.
+					if (!auditTagDescConflict && descA.length > 8 && descB.length > 8) {
+						foundKey = key; break;
+					}
+					// OCR digit error — only merge if AI-extracted data also agrees
+					if (auditNameConflict || auditBarcodeConflict) continue;
 					foundKey = key; break;
 				}
 
-				// different audit IDs (distance > 1) → different products
+				// different audit IDs (distance > 2) → different products
 				continue;
 			}
 
