@@ -10,6 +10,7 @@ import {
   type ColumnDef,
   type PaginationState,
 } from '@tanstack/react-table'
+import { useNavigate } from '@tanstack/react-router'
 
 import { IMDB_COLUMNS, EXCEL_HEADERS, type ImdbColumnName } from '#/types/imdb.ts'
 import { useRecordMutation } from '#/hooks/useRecordMutation.ts'
@@ -18,6 +19,7 @@ import {
   Eye,
   AlertCircle,
   Edit3,
+  ExternalLink,
 } from 'lucide-react'
 import { cn } from '#/lib/utils.ts'
 
@@ -57,6 +59,11 @@ interface ImdbTableProps {
   // Server-side search (optional — when provided, search triggers parent refetch)
   searchValue?: string
   onSearchChange?: (value: string) => void
+  // Server-side sorting (optional — when provided, uses manualSorting)
+  sorting?: SortingState
+  onSortingChange?: React.Dispatch<React.SetStateAction<SortingState>>
+  // Total record count for correct pagination display (required for server-side pagination)
+  totalRecords?: number
 }
 
 // ─── Editable Cell Component ────────────────────────────────────────────────
@@ -181,6 +188,7 @@ interface RecordDetailDialogContentProps {
 }
 
 function RecordDetailDialogContent({ recordId, orgId, jobId, recordIds, currentIndex, onNavigate }: RecordDetailDialogContentProps) {
+  const navigate = useNavigate()
   const { data: recordData, isPending, error } = useRecord(orgId, recordId)
   
   if (isPending) {
@@ -212,27 +220,65 @@ function RecordDetailDialogContent({ recordId, orgId, jobId, recordIds, currentI
       <RecordDetail record={recordData.record} orgId={orgId} jobId={recordData.record.jobId || jobId} />
       
       {hasNavigation && (
-        <div className="flex items-center justify-between border-t border-neutral-200 dark:border-neutral-800 mt-6 pt-4">
+        <div className="border-t border-neutral-200 dark:border-neutral-800 mt-6 pt-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!canGoPrev}
+              onClick={() => canGoPrev && onNavigate!(recordIds![currentIndex! - 1])}
+              className="rounded-xl"
+            >
+              Previous
+            </Button>
+            <span className="text-xs text-neutral-500 font-medium">
+              {currentIndex! + 1} of {recordIds!.length}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!canGoNext}
+              onClick={() => canGoNext && onNavigate!(recordIds![currentIndex! + 1])}
+              className="rounded-xl"
+            >
+              Next
+            </Button>
+          </div>
+          <div className="flex justify-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                navigate({
+                  to: '/dashboard/review-queue/$recordId',
+                  params: { recordId },
+                  state: { recordIds, currentIndex },
+                })
+              }}
+              className="rounded-xl text-indigo-600 dark:text-indigo-400 gap-1.5"
+            >
+              <ExternalLink className="size-3.5" />
+              Open Full Detail
+            </Button>
+          </div>
+        </div>
+      )
+
+      {!hasNavigation && (
+        <div className="flex justify-center border-t border-neutral-200 dark:border-neutral-800 mt-6 pt-4">
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
-            disabled={!canGoPrev}
-            onClick={() => canGoPrev && onNavigate!(recordIds![currentIndex! - 1])}
-            className="rounded-xl"
+            onClick={() => {
+              navigate({
+                to: '/dashboard/review-queue/$recordId',
+                params: { recordId },
+              })
+            }}
+            className="rounded-xl text-indigo-600 dark:text-indigo-400 gap-1.5"
           >
-            Previous
-          </Button>
-          <span className="text-xs text-neutral-500 font-medium">
-            {currentIndex! + 1} of {recordIds!.length}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!canGoNext}
-            onClick={() => canGoNext && onNavigate!(recordIds![currentIndex! + 1])}
-            className="rounded-xl"
-          >
-            Next
+            <ExternalLink className="size-3.5" />
+            Open Full Detail
           </Button>
         </div>
       )}
@@ -245,8 +291,10 @@ export function ImdbTable({
   records, orgId, jobId, 
   pageCount, pagination: controlledPagination, onPaginationChange: controlledOnPaginationChange,
   searchValue: controlledSearchValue, onSearchChange: controlledOnSearchChange,
+  sorting: controlledSorting, onSortingChange: controlledOnSortingChange,
+  totalRecords,
 }: ImdbTableProps) {
-  const [sorting, setSorting] = useState<SortingState>([])
+  const [internalSorting, setInternalSorting] = useState<SortingState>([])
   const [internalGlobalFilter, setInternalGlobalFilter] = useState('')
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
   const [internalPagination, setInternalPagination] = useState<PaginationState>({
@@ -257,12 +305,15 @@ export function ImdbTable({
   // Determine if server-side mode is active
   const isServerSidePagination = !!controlledPagination && !!controlledOnPaginationChange
   const isServerSideSearch = !!controlledOnSearchChange
+  const isServerSideSorting = !!controlledSorting && !!controlledOnSortingChange
 
   // Resolve to either controlled or internal state
   const pagination = isServerSidePagination ? controlledPagination! : internalPagination
   const setPagination = isServerSidePagination ? controlledOnPaginationChange! : setInternalPagination
   const globalFilter = isServerSideSearch ? (controlledSearchValue || '') : internalGlobalFilter
   const setGlobalFilter = isServerSideSearch ? controlledOnSearchChange! : setInternalGlobalFilter
+  const sorting = isServerSideSorting ? controlledSorting! : internalSorting
+  const setSorting = isServerSideSorting ? controlledOnSortingChange! : setInternalSorting
 
   // Stable data reference — prevents new array identity on every parent render
   // which would cause the table to reset state on every re-render
@@ -424,9 +475,6 @@ export function ImdbTable({
   }, [orgId, jobId])
 
 
-  const isServerSidePagination = !!controlledPagination && !!controlledOnPaginationChange
-  const isServerSideSearch = !!controlledOnSearchChange
-
   const table = useReactTable({
     columns: tableColumns,
     data,
@@ -444,6 +492,7 @@ export function ImdbTable({
     onPaginationChange: setPagination,
     ...(isServerSideSearch ? {} : { globalFilterFn: 'includesString' }),
     getCoreRowModel: getCoreRowModel(),
+    manualFiltering: isServerSideSearch,
     ...(isServerSidePagination 
       ? { 
           pageCount, 
@@ -457,7 +506,10 @@ export function ImdbTable({
       ? {} 
       : { getFilteredRowModel: getFilteredRowModel() }
     ),
-    getSortedRowModel: getSortedRowModel(),
+    ...(isServerSideSorting 
+      ? { manualSorting: true }
+      : { getSortedRowModel: getSortedRowModel() }
+    ),
   })
 
   return (
@@ -488,7 +540,7 @@ export function ImdbTable({
 
       <DataGrid
         table={table}
-        recordCount={table.getFilteredRowModel().rows.length}
+        recordCount={isServerSidePagination ? (totalRecords || records.length) : table.getFilteredRowModel().rows.length}
         tableLayout={{
           width: "auto",
         }}

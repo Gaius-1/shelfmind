@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { db } from '#/db/index.ts'
 import { imdbRecords } from '#/db/schema.ts'
 import * as schema from '#/db/schema.ts'
-import { eq, and, or, like, count } from 'drizzle-orm'
+import { eq, and, or, like, count, asc, desc } from 'drizzle-orm'
 
 const routeOptions: any = {
   server: {
@@ -43,6 +43,16 @@ const routeOptions: any = {
           const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'))
           const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '50')))
           const offset = (page - 1) * limit
+          const sortBy = url.searchParams.get('sortBy')
+          const sortDir = url.searchParams.get('sortDir') === 'desc' ? 'desc' : 'asc'
+
+          // Allowed sort columns (IMDB columns + metadata)
+          const SORTABLE_COLUMNS = [
+            'ITEM_NAME', 'BARCODE', 'MANUFACTURER', 'BRAND', 'WEIGHT',
+            'PACKAGING_TYPE', 'COUNTRY', 'VARIANT', 'TYPE',
+            'FRAGRANCE_FLAVOR', 'PROMOTION', 'ADDONS', 'TAGLINE',
+            'confidence', 'createdAt',
+          ]
 
           // 4. Build filters
           const filters: any[] = [
@@ -66,17 +76,23 @@ const routeOptions: any = {
             filters.push(eq(imdbRecords.flagged, true))
           }
 
-          // 5. Count total matching records
+          // 5. Build orderBy
+          const orderByCol = SORTABLE_COLUMNS.includes(sortBy || '') ? sortBy! : 'createdAt'
+          const orderByFn = sortDir === 'desc' ? desc : asc
+          const orderByClause = orderByFn((imdbRecords as any)[orderByCol])
+
+          // 6. Count total matching records
           const countResult = await db.select({ total: count() })
             .from(imdbRecords)
             .where(and(...filters))
 
           const total = Number(countResult[0]?.total || 0)
 
-          // 6. Query paginated records
+          // 7. Query paginated + sorted records
           const records = await db.select()
             .from(imdbRecords)
             .where(and(...filters))
+            .orderBy(orderByClause)
             .limit(limit)
             .offset(offset)
 

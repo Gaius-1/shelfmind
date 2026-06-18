@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useDeferredValue } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import type { PaginationState } from '@tanstack/react-table'
 import { authClient } from '#/lib/auth-client.ts'
@@ -53,6 +53,8 @@ interface ContentProps {
 function ReviewQueueContent({ orgId, jobId }: ContentProps) {
   const navigate = useNavigate()
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 25 })
+  const [searchInput, setSearchInput] = useState('')
+  const search = useDeferredValue(searchInput)
   
   // Fetch jobs for the dropdown selection filter
   const { data: jobsData } = useJobs(orgId)
@@ -62,8 +64,12 @@ function ReviewQueueContent({ orgId, jobId }: ContentProps) {
 
   // Condition 1: Specific Job ID selected — paginated
   const jobQuery = useImdbRecords(orgId, jobId || 'dummy-no-job', pagination)
-  // Condition 2: No Job ID selected, show all flagged products — paginated
-  const productsQuery = useProducts(orgId, { flagged: true }, pagination)
+  // Condition 2: No Job ID selected, show all flagged products — paginated with search
+  const productsQuery = useProducts(
+    orgId,
+    search ? { flagged: true, search } : { flagged: true },
+    pagination,
+  )
 
   const isPending = isSpecificJob ? jobQuery.isPending : productsQuery.isPending
   const error = isSpecificJob ? jobQuery.error : productsQuery.error
@@ -203,6 +209,9 @@ function ReviewQueueContent({ orgId, jobId }: ContentProps) {
             pageCount={pageCount}
             pagination={pagination}
             onPaginationChange={setPagination}
+            searchValue={searchInput}
+            onSearchChange={setSearchInput}
+            totalRecords={total}
           />
         )}
       </div>

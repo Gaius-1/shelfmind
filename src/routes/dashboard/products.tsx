@@ -1,6 +1,6 @@
 import { useState, useDeferredValue } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import type { PaginationState } from '@tanstack/react-table'
+import type { PaginationState, SortingState } from '@tanstack/react-table'
 import { authClient } from '#/lib/auth-client.ts'
 import { useProducts } from '#/hooks/useProducts.ts'
 import { ImdbTable } from '#/components/dashboard/ImdbTable.tsx'
@@ -33,6 +33,7 @@ function ProductsPage() {
 
 function ProductsContent({ orgId }: { orgId: string }) {
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 25 })
+  const [sorting, setSorting] = useState<SortingState>([])
   const [searchInput, setSearchInput] = useState('')
   const search = useDeferredValue(searchInput)
 
@@ -40,6 +41,7 @@ function ProductsContent({ orgId }: { orgId: string }) {
     orgId,
     search ? { search } : undefined,
     pagination,
+    sorting,
   )
 
   const records = productsData?.records || []
@@ -82,6 +84,9 @@ function ProductsContent({ orgId }: { orgId: string }) {
             onPaginationChange={setPagination}
             searchValue={searchInput}
             onSearchChange={setSearchInput}
+            sorting={sorting}
+            onSortingChange={setSorting}
+            totalRecords={total}
           />
         )}
       </div>
