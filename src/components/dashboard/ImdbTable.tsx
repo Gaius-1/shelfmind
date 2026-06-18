@@ -8,7 +8,6 @@ import {
   getFilteredRowModel,
   type SortingState,
   type ColumnDef,
-  type PaginationState,
 } from '@tanstack/react-table'
 
 import { IMDB_COLUMNS, EXCEL_HEADERS, type ImdbColumnName } from '#/types/imdb.ts'
@@ -198,12 +197,7 @@ function RecordDetailDialogContent({ recordId, orgId, jobId }: { recordId: strin
 export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
-  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 25 })
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
-
-  // Stable data reference — prevents infinite re-renders and ensures
-  // TanStack Table row model pipeline gets a consistent input reference
-  const data = useMemo(() => records, [records])
   
   // Define visibility for columns. We use useMemo to map exactly what should be visible by default.
   // We'll manage column visibility in table state, but rely on Tailwind for mobile hiding.
@@ -363,23 +357,23 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
 
   const table = useReactTable({
     columns: tableColumns,
-    data,
+    data: records,
     getRowId: (row: any) => row.id,
     autoResetPageIndex: true,
+    initialState: {
+      pagination: {
+        pageIndex: 0,
+        pageSize: 25,
+      },
+    },
     state: {
       sorting,
       columnVisibility,
       globalFilter,
-      pagination,
     },
     onSortingChange: setSorting,
     onColumnVisibilityChange: setColumnVisibility,
-    onGlobalFilterChange: (value) => {
-      // Reset to first page whenever the search query changes
-      setPagination(p => ({ ...p, pageIndex: 0 }))
-      setGlobalFilter(value)
-    },
-    onPaginationChange: setPagination,
+    onGlobalFilterChange: setGlobalFilter,
     globalFilterFn: 'includesString',
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -395,7 +389,7 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
           <Input
             type="text"
             value={globalFilter}
-            onChange={(e) => table.setGlobalFilter(e.target.value)}
+            onChange={(e) => setGlobalFilter(e.target.value)}
             placeholder="Search records..."
             className="w-full h-10 bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800/80 rounded-xl"
           />

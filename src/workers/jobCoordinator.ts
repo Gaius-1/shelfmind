@@ -98,26 +98,6 @@ export class JobCoordinator extends DurableObject<Env> {
 
 	// --- RPC Methods for Background Pipeline to Push Updates ---
 
-	/**
-	 * Resets the pipeline state back to the initial clean slate.
-	 * Called before re-dispatching a retried job so the live view
-	 * starts fresh instead of showing the previous run's failed state.
-	 */
-	async resetState(jobId: string) {
-		this.state = {
-			jobId,
-			nodes: initialNodes.map(n => ({
-				...n,
-				data: { ...n.data, status: 'pending' as NodeStatus, processedCount: undefined, totalCount: undefined },
-			})),
-			edges: [...initialEdges],
-			logs: {},
-		};
-		// Broadcast a full reset to any connected clients
-		this.broadcast({ type: "init", state: this.state });
-		await this.persist();
-	}
-
 	async updateNodeState(
 		nodeId: string,
 		status: NodeStatus,

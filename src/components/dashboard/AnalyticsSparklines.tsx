@@ -12,6 +12,11 @@ interface SparklineData {
   value: number
 }
 
+interface SparklineData {
+  time: string
+  value: number
+}
+
 interface AnalyticsSparklinesProps {
   totalProducts: number
   avgConfidence: number
