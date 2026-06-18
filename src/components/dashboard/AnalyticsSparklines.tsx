@@ -1,8 +1,9 @@
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '#/components/ui/card.tsx'
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select.tsx'
+import { FileSpreadsheet } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '#/components/ui/chart.tsx'
 import { Badge } from '#/components/reui/badge.tsx'
+import { Button } from '#/components/ui/button.tsx'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { TradeUpIcon, TradeDownIcon } from '@hugeicons/core-free-icons'
 
@@ -56,16 +57,12 @@ export function AnalyticsSparklines({ totalProducts, avgConfidence, flaggedCount
     <div className="flex flex-col gap-4 w-full h-full">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-medium text-foreground">Analytics Overview</h2>
-        <Select defaultValue="today">
-          <SelectTrigger className="w-[100px] h-8 bg-card border-border text-xs text-foreground rounded-lg">
-            <SelectValue placeholder="Select" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="today">Today</SelectItem>
-            <SelectItem value="week">This Week</SelectItem>
-            <SelectItem value="month">This Month</SelectItem>
-          </SelectContent>
-        </Select>
+        <Button asChild>
+          <Link to="/dashboard/exports">
+            <FileSpreadsheet className="size-4" />
+            Export Results
+          </Link>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1 min-h-0">
