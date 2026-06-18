@@ -1,4 +1,6 @@
+import { useState, useDeferredValue } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import type { PaginationState } from '@tanstack/react-table'
 import { authClient } from '#/lib/auth-client.ts'
 import { useProducts } from '#/hooks/useProducts.ts'
 import { ImdbTable } from '#/components/dashboard/ImdbTable.tsx'
@@ -30,9 +32,19 @@ function ProductsPage() {
 }
 
 function ProductsContent({ orgId }: { orgId: string }) {
-  const { data: productsData, isPending, error } = useProducts(orgId)
+  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 25 })
+  const [searchInput, setSearchInput] = useState('')
+  const search = useDeferredValue(searchInput)
+
+  const { data: productsData, isPending, error } = useProducts(
+    orgId,
+    search ? { search } : undefined,
+    pagination,
+  )
 
   const records = productsData?.records || []
+  const total = productsData?.total || 0
+  const pageCount = total > 0 ? Math.ceil(total / pagination.pageSize) : 0
 
   return (
     <div className="flex flex-col gap-6 p-6 lg:p-8 max-w-7xl mx-auto w-full">
@@ -48,7 +60,7 @@ function ProductsContent({ orgId }: { orgId: string }) {
 
       {/* Table Area */}
       <div className="mt-2">
-        {isPending ? (
+        {isPending && !productsData ? (
           <div className="flex flex-col items-center justify-center p-12">
             <Spinner size="lg" className="text-indigo-600 dark:text-indigo-400" />
             <p className="text-xs text-neutral-500 font-semibold mt-2 animate-pulse">
@@ -65,6 +77,11 @@ function ProductsContent({ orgId }: { orgId: string }) {
             records={records}
             orgId={orgId}
             jobId="all"
+            pageCount={pageCount}
+            pagination={pagination}
+            onPaginationChange={setPagination}
+            searchValue={searchInput}
+            onSearchChange={setSearchInput}
           />
         )}
       </div>

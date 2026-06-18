@@ -1,6 +1,6 @@
-// import * as React from 'react'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import type { PaginationState } from '@tanstack/react-table'
 import { authClient } from '#/lib/auth-client.ts'
 import { useImdbRecords } from '#/hooks/useImdbRecords.ts'
 import { useProducts } from '#/hooks/useProducts.ts'
@@ -8,7 +8,6 @@ import { useJobs } from '#/hooks/useJobs.ts'
 import { ImdbTable } from '#/components/dashboard/ImdbTable.tsx'
 import { Spinner } from '#/components/spinner.tsx'
 import { AlertCircle, FileCheck, ShieldAlert, BadgeAlert } from 'lucide-react'
-// import { cn } from '#/lib/utils.ts'
 import { Frame, FramePanel } from '#/components/reui/frame.tsx'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select.tsx'
 
@@ -53,17 +52,19 @@ interface ContentProps {
 
 function ReviewQueueContent({ orgId, jobId }: ContentProps) {
   const navigate = useNavigate()
+  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 25 })
   
   // Fetch jobs for the dropdown selection filter
   const { data: jobsData } = useJobs(orgId)
   const completedJobs = (jobsData?.jobs || []).filter((j: any) => j.status === 'COMPLETED')
 
-  // Condition 1: Specific Job ID selected
-  const jobQuery = useImdbRecords(orgId, jobId || 'dummy-no-job')
-  // Condition 2: No Job ID selected, show all flagged products
-  const productsQuery = useProducts(orgId, { flagged: true })
-
   const isSpecificJob = !!jobId
+
+  // Condition 1: Specific Job ID selected — paginated
+  const jobQuery = useImdbRecords(orgId, jobId || 'dummy-no-job', pagination)
+  // Condition 2: No Job ID selected, show all flagged products — paginated
+  const productsQuery = useProducts(orgId, { flagged: true }, pagination)
+
   const isPending = isSpecificJob ? jobQuery.isPending : productsQuery.isPending
   const error = isSpecificJob ? jobQuery.error : productsQuery.error
 
@@ -75,19 +76,29 @@ function ReviewQueueContent({ orgId, jobId }: ContentProps) {
     return productsQuery.data?.records || []
   }, [isSpecificJob, jobQuery.data, productsQuery.data])
 
+  // Get total for pageCount calculation
+  const total = useMemo(() => {
+    if (isSpecificJob) {
+      return jobQuery.data?.total || 0
+    }
+    return productsQuery.data?.total || 0
+  }, [isSpecificJob, jobQuery.data, productsQuery.data])
+
+  const pageCount = total > 0 ? Math.ceil(total / pagination.pageSize) : 0
+
   // Aggregate metrics for summary bar
   const metrics = useMemo(() => {
     if (records.length === 0) {
-      return { total: 0, flagged: 0, avgConfidence: 0 }
+      return { total, flagged: 0, avgConfidence: 0 }
     }
     const flaggedCount = records.filter((r: any) => r.flagged).length
     const totalConfidence = records.reduce((sum: number, r: any) => sum + (r.confidence || 0), 0)
     return {
-      total: records.length,
+      total,
       flagged: flaggedCount,
       avgConfidence: totalConfidence / records.length,
     }
-  }, [records])
+  }, [records, total])
 
   const handleJobChange = (val: string) => {
     navigate({
@@ -172,7 +183,7 @@ function ReviewQueueContent({ orgId, jobId }: ContentProps) {
 
       {/* Main Review Table */}
       <div className="mt-2">
-        {isPending ? (
+        {isPending && !(isSpecificJob ? jobQuery.data : productsQuery.data) ? (
           <div className="flex flex-col items-center justify-center p-12">
             <Spinner size="lg" className="text-indigo-600 dark:text-indigo-400" />
             <p className="text-xs text-neutral-500 dark:text-neutral-400 font-semibold mt-2 animate-pulse">
@@ -189,6 +200,9 @@ function ReviewQueueContent({ orgId, jobId }: ContentProps) {
             records={records}
             orgId={orgId}
             jobId={jobId || 'all'}
+            pageCount={pageCount}
+            pagination={pagination}
+            onPaginationChange={setPagination}
           />
         )}
       </div>

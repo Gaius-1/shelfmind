@@ -50,6 +50,13 @@ interface ImdbTableProps {
   orgId: string
   jobId: string
   showJobFilter?: boolean
+  // Server-side pagination (optional — when provided, uses manualPagination)
+  pageCount?: number
+  pagination?: PaginationState
+  onPaginationChange?: React.Dispatch<React.SetStateAction<PaginationState>>
+  // Server-side search (optional — when provided, search triggers parent refetch)
+  searchValue?: string
+  onSearchChange?: (value: string) => void
 }
 
 // ─── Editable Cell Component ────────────────────────────────────────────────
@@ -164,7 +171,16 @@ function EditableCell({ record, columnName, value, orgId, jobId }: EditableCellP
 }
 
 // ─── Record Detail Dialog Component ──────────────────────────────────────────
-function RecordDetailDialogContent({ recordId, orgId, jobId }: { recordId: string, orgId: string, jobId: string }) {
+interface RecordDetailDialogContentProps {
+  recordId: string
+  orgId: string
+  jobId: string
+  recordIds?: string[]
+  currentIndex?: number
+  onNavigate?: (recordId: string) => void
+}
+
+function RecordDetailDialogContent({ recordId, orgId, jobId, recordIds, currentIndex, onNavigate }: RecordDetailDialogContentProps) {
   const { data: recordData, isPending, error } = useRecord(orgId, recordId)
   
   if (isPending) {
@@ -187,22 +203,66 @@ function RecordDetailDialogContent({ recordId, orgId, jobId }: { recordId: strin
     )
   }
 
+  const hasNavigation = recordIds && recordIds.length > 1 && typeof currentIndex === 'number' && onNavigate
+  const canGoPrev = hasNavigation && currentIndex! > 0
+  const canGoNext = hasNavigation && currentIndex! < recordIds!.length - 1
+
   return (
     <div className="max-h-[85vh] overflow-y-auto overflow-x-hidden pt-4 pb-4 px-2">
       <RecordDetail record={recordData.record} orgId={orgId} jobId={recordData.record.jobId || jobId} />
+      
+      {hasNavigation && (
+        <div className="flex items-center justify-between border-t border-neutral-200 dark:border-neutral-800 mt-6 pt-4">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!canGoPrev}
+            onClick={() => canGoPrev && onNavigate!(recordIds![currentIndex! - 1])}
+            className="rounded-xl"
+          >
+            Previous
+          </Button>
+          <span className="text-xs text-neutral-500 font-medium">
+            {currentIndex! + 1} of {recordIds!.length}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!canGoNext}
+            onClick={() => canGoNext && onNavigate!(recordIds![currentIndex! + 1])}
+            className="rounded-xl"
+          >
+            Next
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
 
 // ─── Main Table Component ───────────────────────────────────────────────────
-export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
+export function ImdbTable({ 
+  records, orgId, jobId, 
+  pageCount, pagination: controlledPagination, onPaginationChange: controlledOnPaginationChange,
+  searchValue: controlledSearchValue, onSearchChange: controlledOnSearchChange,
+}: ImdbTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
-  const [globalFilter, setGlobalFilter] = useState('')
+  const [internalGlobalFilter, setInternalGlobalFilter] = useState('')
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
-  const [pagination, setPagination] = useState<PaginationState>({
+  const [internalPagination, setInternalPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 25,
   })
+
+  // Determine if server-side mode is active
+  const isServerSidePagination = !!controlledPagination && !!controlledOnPaginationChange
+  const isServerSideSearch = !!controlledOnSearchChange
+
+  // Resolve to either controlled or internal state
+  const pagination = isServerSidePagination ? controlledPagination! : internalPagination
+  const setPagination = isServerSidePagination ? controlledOnPaginationChange! : setInternalPagination
+  const globalFilter = isServerSideSearch ? (controlledSearchValue || '') : internalGlobalFilter
+  const setGlobalFilter = isServerSideSearch ? controlledOnSearchChange! : setInternalGlobalFilter
 
   // Stable data reference — prevents new array identity on every parent render
   // which would cause the table to reset state on every re-render
@@ -364,12 +424,14 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
   }, [orgId, jobId])
 
 
+  const isServerSidePagination = !!controlledPagination && !!controlledOnPaginationChange
+  const isServerSideSearch = !!controlledOnSearchChange
+
   const table = useReactTable({
     columns: tableColumns,
     data,
     getRowId: (row: any) => row.id,
-    // Let TanStack handle page resets automatically when filters or data change.
-    autoResetPageIndex: true,
+    autoResetPageIndex: false,
     state: {
       sorting,
       columnVisibility,
@@ -380,10 +442,21 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
     onColumnVisibilityChange: setColumnVisibility,
     onGlobalFilterChange: setGlobalFilter,
     onPaginationChange: setPagination,
-    globalFilterFn: 'includesString',
+    ...(isServerSideSearch ? {} : { globalFilterFn: 'includesString' }),
     getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
+    ...(isServerSidePagination 
+      ? { 
+          pageCount, 
+          manualPagination: true 
+        } 
+      : { 
+          getPaginationRowModel: getPaginationRowModel() 
+        }
+    ),
+    ...(isServerSideSearch 
+      ? {} 
+      : { getFilteredRowModel: getFilteredRowModel() }
+    ),
     getSortedRowModel: getSortedRowModel(),
   })
 
@@ -443,7 +516,10 @@ export function ImdbTable({ records, orgId, jobId }: ImdbTableProps) {
             <RecordDetailDialogContent 
               recordId={selectedRecordId} 
               orgId={orgId} 
-              jobId={jobId} 
+              jobId={jobId}
+              recordIds={data.map(r => r.id)}
+              currentIndex={data.findIndex(r => r.id === selectedRecordId)}
+              onNavigate={(newId) => setSelectedRecordId(newId)}
             />
           )}
         </DialogContent>

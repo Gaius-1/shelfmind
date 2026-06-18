@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { db } from '#/db/index.ts'
 import { jobs, imdbRecords } from '#/db/schema.ts'
 import * as schema from '#/db/schema.ts'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, count } from 'drizzle-orm'
 
 const routeOptions: any = {
   server: {
@@ -38,7 +38,13 @@ const routeOptions: any = {
 
           const { jobId } = params
 
-          // 3. Fetch associated job to return its processing status
+          // 3. Parse pagination query params
+          const url = new URL(request.url)
+          const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'))
+          const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '50')))
+          const offset = (page - 1) * limit
+
+          // 4. Fetch associated job to return its processing status
           const jobResults = await db.select()
             .from(jobs)
             .where(and(eq(jobs.id, jobId), eq(jobs.organisationId, orgId)))
@@ -53,10 +59,19 @@ const routeOptions: any = {
 
           const job = jobResults[0]
 
-          // 4. Fetch associated records
+          // 5. Count total records for this job
+          const countResult = await db.select({ total: count() })
+            .from(imdbRecords)
+            .where(and(eq(imdbRecords.jobId, jobId), eq(imdbRecords.organisationId, orgId)))
+
+          const total = Number(countResult[0]?.total || 0)
+
+          // 6. Fetch paginated records
           const records = await db.select()
             .from(imdbRecords)
             .where(and(eq(imdbRecords.jobId, jobId), eq(imdbRecords.organisationId, orgId)))
+            .limit(limit)
+            .offset(offset)
 
           return new Response(JSON.stringify({
             success: true,
@@ -67,7 +82,10 @@ const routeOptions: any = {
               ...r,
               rawExtraction: typeof r.rawExtraction === 'string' ? JSON.parse(r.rawExtraction) : r.rawExtraction,
               fieldMetadata: typeof r.fieldMetadata === 'string' ? JSON.parse(r.fieldMetadata) : r.fieldMetadata,
-            }))
+            })),
+            total,
+            page,
+            limit,
           }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' }

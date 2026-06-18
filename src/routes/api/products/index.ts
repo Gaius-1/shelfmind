@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { db } from '#/db/index.ts'
 import { imdbRecords } from '#/db/schema.ts'
 import * as schema from '#/db/schema.ts'
-import { eq, and, or, like } from 'drizzle-orm'
+import { eq, and, or, like, count } from 'drizzle-orm'
 
 const routeOptions: any = {
   server: {
@@ -40,6 +40,9 @@ const routeOptions: any = {
           const url = new URL(request.url)
           const search = url.searchParams.get('search')
           const flagged = url.searchParams.get('flagged')
+          const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'))
+          const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '50')))
+          const offset = (page - 1) * limit
 
           // 4. Build filters
           const filters: any[] = [
@@ -63,10 +66,19 @@ const routeOptions: any = {
             filters.push(eq(imdbRecords.flagged, true))
           }
 
-          // 5. Query records
+          // 5. Count total matching records
+          const countResult = await db.select({ total: count() })
+            .from(imdbRecords)
+            .where(and(...filters))
+
+          const total = Number(countResult[0]?.total || 0)
+
+          // 6. Query paginated records
           const records = await db.select()
             .from(imdbRecords)
             .where(and(...filters))
+            .limit(limit)
+            .offset(offset)
 
           return new Response(JSON.stringify({
             success: true,
@@ -75,6 +87,9 @@ const routeOptions: any = {
               rawExtraction: typeof r.rawExtraction === 'string' ? JSON.parse(r.rawExtraction) : r.rawExtraction,
               fieldMetadata: typeof r.fieldMetadata === 'string' ? JSON.parse(r.fieldMetadata) : r.fieldMetadata,
             })),
+            total,
+            page,
+            limit,
           }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' }

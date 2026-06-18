@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { queryKeys } from '#/lib/query-keys.ts'
 
 export interface RecordResponse {
@@ -8,6 +8,7 @@ export interface RecordResponse {
 
 /**
  * Custom hook to fetch a single record by recordId.
+ * Uses keepPreviousData for smooth transitions when navigating between records.
  */
 export function useRecord(orgId: string, recordId: string) {
   return useQuery<RecordResponse>({
@@ -20,5 +21,6 @@ export function useRecord(orgId: string, recordId: string) {
       return await res.json()
     },
     staleTime: 10000, // 10s staleTime
+    placeholderData: keepPreviousData,
   })
 }
