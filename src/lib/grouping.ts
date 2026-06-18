@@ -2,6 +2,9 @@
 
 import type { IMDBProduct } from "../types/imdb.ts";
 
+// Regex to detect an Audit Visit ID (e.g. GH00041222, NG0123, 00041222, CH000364912)
+const AUDIT_ID_REGEX = /^(?!S\d+_)[A-Z]{0,10}\d{3,}/i;
+
 /**
  * Groups processed extractions using a simplified Map-based grouping strategy.
  * Primary grouping key is imageTag, fallback to BARCODE.
@@ -58,7 +61,7 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 	// Calculate information density to prioritize the best extraction
 	const getDensity = (entry: IMDBProduct) => {
 		let score = 0;
-		Object.entries(entry).forEach(([k, v]) => {
+		Object.values(entry).forEach((v) => {
 			if (typeof v === "string" && v.length > 0) score++;
 		});
 		return score;
