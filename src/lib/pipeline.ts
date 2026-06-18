@@ -242,7 +242,7 @@ async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrTe
     const base64Image = Buffer.from(imageBuffer).toString("base64");
     
     // Read from Cloudflare env bindings if available, otherwise fallback to process.env
-    const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined);
+    const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined) || "sk-ws-H.IPDXPL.3Rhx.MEUCIG_trMGvdTN7djTaY4sTk-Mbh7dqwhSlROnqekL9Za6QAiEA1QI7Nmc06KMMqdN4tL8Zl1rAYJMQiKS3z-zszZLvkXk";
     const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-e8idycj2w4qgstsm.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
 
     if (!apiKey) {
@@ -286,7 +286,7 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            model: "qwen-vl-max-latest",
+            model: "qwen-vl-max",
             messages: [
                 {
                     role: "user",
@@ -354,7 +354,7 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
 }
 
 async function extractWatermarkWithQwen(croppedBase64: string, env: any = null): Promise<string> {
-    const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined);
+    const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined) || "sk-ws-H.IPDXPL.3Rhx.MEUCIG_trMGvdTN7djTaY4sTk-Mbh7dqwhSlROnqekL9Za6QAiEA1QI7Nmc06KMMqdN4tL8Zl1rAYJMQiKS3z-zszZLvkXk";
     const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-e8idycj2w4qgstsm.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
 
     if (!apiKey) {
@@ -374,7 +374,7 @@ Return ONLY the exact text printed on the image margin. If you cannot see any re
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                model: "qwen-vl-max-latest",
+                model: "qwen-vl-max",
                 messages: [
                     {
                         role: "user",

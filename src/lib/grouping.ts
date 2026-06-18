@@ -131,9 +131,32 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 				if (dA && dB && dA !== dB) continue;
 				// Fuzzy compare the numeric base (strip any discriminator suffix before Levenshtein)
 				const numBase = (id: string) => id.replace(/_[A-Z]$/i, "");
-				const idDist = levenshtein(numBase(auditId), numBase(extAuditId));
-				if (idDist > 0) continue;   // different audit IDs → different products (exact match only)
-				foundKey = key; break;       // exact numeric base match → same product
+				const cleanA = numBase(auditId);
+				const cleanB = numBase(extAuditId);
+				const idDist = levenshtein(cleanA, cleanB);
+
+				if (idDist === 0) {
+					foundKey = key; break; // exact numeric base match → same product
+				}
+
+				if (idDist === 1) {
+					// Check if they are consecutive numbers (which means different products/visits)
+					const digitsA = cleanA.replace(/\D/g, "");
+					const digitsB = cleanB.replace(/\D/g, "");
+					if (digitsA && digitsB && digitsA.length === digitsB.length) {
+						const valA = parseInt(digitsA, 10);
+						const valB = parseInt(digitsB, 10);
+						if (!isNaN(valA) && !isNaN(valB) && Math.abs(valA - valB) === 1) {
+							// Consecutive numbers -> different products, do not merge!
+							continue;
+						}
+					}
+					// Not consecutive, but distance is 1 (OCR error) -> same product, merge!
+					foundKey = key; break;
+				}
+
+				// different audit IDs (distance > 1) → different products
+				continue;
 			}
 
 			// Helper for Conflict Detection
