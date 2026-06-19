@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Sheet,
   SheetContent,
@@ -8,6 +8,7 @@ import {
   SheetFooter,
   SheetClose,
 } from '#/components/ui/sheet.tsx'
+import { Badge } from '#/components/reui/badge.tsx'
 import { ScrollArea } from '#/components/ui/scroll-area.tsx'
 import { Button } from '#/components/ui/button.tsx'
 import type { Node } from '@xyflow/react'
@@ -32,6 +33,14 @@ export function NodeDetailsPanel({ node, logs, onClose }: NodeDetailsPanelProps)
     }
   }, [node?.id, node?.data.status])
 
+  const logsEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (isLogsExpanded && logs.length > 0) {
+      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [logs, isLogsExpanded])
+
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent side="right" className="flex flex-col gap-0 space-y-0 w-[400px] sm:w-[540px] sm:max-w-[540px] border-l border-border bg-card/95 backdrop-blur-md">
@@ -40,12 +49,24 @@ export function NodeDetailsPanel({ node, logs, onClose }: NodeDetailsPanelProps)
             <SheetHeader className="pb-4">
               <div className="flex items-center justify-between pr-8">
                 <SheetTitle className="text-xl font-bold font-outfit">{node.data.title}</SheetTitle>
-                <div className={`px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wider
-                  ${node.data.status === 'completed' ? 'bg-success/20 text-success-foreground' : 
-                    node.data.status === 'active' ? 'bg-primary/20 text-primary-foreground animate-pulse' : 
-                    node.data.status === 'failed' ? 'bg-destructive/20 text-destructive font-bold animate-pulse' :
-                    'bg-muted text-muted-foreground'}`}>
-                  {node.data.status}
+                <div className="flex items-center gap-2">
+                  {node.data.totalCount !== undefined && node.data.processedCount !== undefined && (
+                    <span className="text-[11px] font-mono font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-sm">
+                      {node.data.processedCount} / {node.data.totalCount}
+                    </span>
+                  )}
+                  {node.data.badge && (
+                    <Badge variant="outline" className="text-[10px] uppercase tracking-wider h-5 px-1.5">
+                      {node.data.badge}
+                    </Badge>
+                  )}
+                  <div className={`px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wider
+                    ${node.data.status === 'completed' ? 'bg-success/20 text-success-foreground' : 
+                      node.data.status === 'active' ? 'bg-primary/20 text-primary-foreground animate-pulse' : 
+                      node.data.status === 'failed' ? 'bg-destructive/20 text-destructive font-bold animate-pulse' :
+                      'bg-muted text-muted-foreground'}`}>
+                    {node.data.status}
+                  </div>
                 </div>
               </div>
               <SheetDescription className="font-medium text-muted-foreground">
@@ -92,6 +113,7 @@ export function NodeDetailsPanel({ node, logs, onClose }: NodeDetailsPanelProps)
                             </span>
                           </div>
                         ))}
+                        <div ref={logsEndRef} />
                       </div>
                     )}
                   </div>
