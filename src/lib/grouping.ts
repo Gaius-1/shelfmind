@@ -5,6 +5,48 @@ import type { IMDBProduct } from "../types/imdb.ts";
 // Regex to detect an Audit Visit ID (e.g. GH00041222, NG0123, 00041222, CH000364912)
 const AUDIT_ID_REGEX = /^(?!S\d+_)[A-Z]{0,10}\d{3,}/i;
 
+export const levenshtein = (a: string, b: string): number => {
+	if (a.length === 0) return b.length;
+	if (b.length === 0) return a.length;
+	const matrix = Array.from({ length: b.length + 1 }, (_, i) => [i]);
+	for (let j = 1; j <= a.length; j++) matrix[0][j] = j;
+	for (let i = 1; i <= b.length; i++) {
+		for (let j = 1; j <= a.length; j++) {
+			if (b.charAt(i - 1) === a.charAt(j - 1)) {
+				matrix[i][j] = matrix[i - 1][j - 1];
+			} else {
+				matrix[i][j] = Math.min(
+					matrix[i - 1][j - 1] + 1,
+					Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1)
+				);
+			}
+		}
+	}
+	return matrix[b.length][a.length];
+};
+
+export const isSafeSubstringMatch = (n: string, extN: string, brandA: string, brandB: string): boolean => {
+	if (n === extN) return true;
+	const isSub = extN.includes(n) || n.includes(extN);
+	if (!isSub) {
+		// Even when names aren't substrings of each other, same brand + long shared
+		// common prefix (≥8 chars) strongly implies the same product photographed from
+		// different angles (e.g. "U-FRESH ORANGE 350ML…" vs "U-FRESH ORANGE JUICE DRINK").
+		if (brandA && brandB && brandA === brandB) {
+			let cp = 0;
+			while (cp < n.length && cp < extN.length && n[cp] === extN[cp]) cp++;
+			// If the common prefix is just the brand name, it doesn't mean anything.
+			if (cp <= brandA.length) return false;
+			if (cp >= 8) return true;
+		}
+		return false;
+	}
+	// Safe if they explicitly share a brand
+	if (brandA && brandB && brandA === brandB) return true;
+	// Safe if the matched substring is substantial (avoids generic words like "drink")
+	return n.length > 10 && extN.length > 10;
+};
+
 /**
  * Groups processed extractions using a simplified Map-based grouping strategy.
  * Primary grouping key is imageTag, fallback to BARCODE.
@@ -89,48 +131,7 @@ export async function groupAndMergeImages(rawExtractions: IMDBProduct[]): Promis
 	// Sort by highest density first so the clearest image dictates the base record
 	const sortedExtractions = [...rawExtractions].sort((a, b) => getDensity(b) - getDensity(a));
 
-	// Helper: Levenshtein distance for fuzzy barcode matching
-	const levenshtein = (a: string, b: string): number => {
-		if (a.length === 0) return b.length;
-		if (b.length === 0) return a.length;
-		const matrix = Array.from({ length: b.length + 1 }, (_, i) => [i]);
-		for (let j = 1; j <= a.length; j++) matrix[0][j] = j;
-		for (let i = 1; i <= b.length; i++) {
-			for (let j = 1; j <= a.length; j++) {
-				if (b.charAt(i - 1) === a.charAt(j - 1)) {
-					matrix[i][j] = matrix[i - 1][j - 1];
-				} else {
-					matrix[i][j] = Math.min(
-						matrix[i - 1][j - 1] + 1,
-						Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1)
-					);
-				}
-			}
-		}
-		return matrix[b.length][a.length];
-	};
 
-	// Pure helper: checks if two normalized product names are close enough to be the same product.
-	// Takes brand/extBrand as parameters so it can be called from any scope.
-	const isSafeSubstringMatch = (n: string, extN: string, brandA: string, brandB: string): boolean => {
-		if (n === extN) return true;
-		const isSub = extN.includes(n) || n.includes(extN);
-		if (!isSub) {
-			// Even when names aren't substrings of each other, same brand + long shared
-			// common prefix (≥8 chars) strongly implies the same product photographed from
-			// different angles (e.g. "U-FRESH ORANGE 350ML…" vs "U-FRESH ORANGE JUICE DRINK").
-			if (brandA && brandB && brandA === brandB) {
-				let cp = 0;
-				while (cp < n.length && cp < extN.length && n[cp] === extN[cp]) cp++;
-				if (cp >= 8) return true;
-			}
-			return false;
-		}
-		// Safe if they explicitly share a brand
-		if (brandA && brandB && brandA === brandB) return true;
-		// Safe if the matched substring is substantial (avoids generic words like "drink")
-		return n.length > 10 && extN.length > 10;
-	};
 
 	// Extracts the product-description portion of a raw imageTag — everything that follows the audit ID.
 	// e.g. "GH000413323_B Zesta Ginger 25+7 Free 57.6g Envelope Teabag box Cardboard Suiza"
