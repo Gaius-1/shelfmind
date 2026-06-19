@@ -3,8 +3,9 @@ import { jobs, imdbRecords, duplicatePairs } from "../db/schema.ts";
 import { eq, and, ne } from "drizzle-orm";
 import pLimit from "p-limit";
 import type { IMDBProduct } from "../types/imdb.ts";
+import { FIELD_WEIGHTS, FIELD_EMPTY_THRESHOLD } from "../types/imdb.ts";
 import { getUpload } from "./storage.ts";
-import { groupAndMergeImages } from "./grouping.ts";
+import { groupAndMergeImages, isSafeSubstringMatch } from "./grouping.ts";
 import { normalizeBarcode, normalizeWeight, normalizePackaging, normalizeCountry, normalizeField, normalizeManufacturer, normalizeBrand } from "./normalization.ts";
 import { parseWatermark } from "./watermark-parser.ts";
 
@@ -26,21 +27,21 @@ export class JobReporter {
 		if (!this.stub) return;
 		try {
 			await this.stub.updateNodeState(nodeId, status as any, processedCount, totalCount, badge, title, description);
-		} catch (e) {}
+		} catch (e) { console.warn("[JobReporter] updateNodeState failed:", e); }
 	}
 
 	async updateEdgeState(edgeId: string, animated: boolean, color: string) {
 		if (!this.stub) return;
 		try {
 			await this.stub.updateEdgeState(edgeId, animated, color);
-		} catch (e) {}
+		} catch (e) { console.warn("[JobReporter] updateEdgeState failed:", e); }
 	}
 
 	async addLog(nodeId: string, message: string, logType: "info" | "success" | "warning" | "error") {
 		if (!this.stub) return;
 		try {
 			await this.stub.addLog(nodeId, message, logType);
-		} catch (e) {}
+		} catch (e) { console.warn("[JobReporter] addLog failed:", e); }
 	}
 }
 
@@ -238,19 +239,47 @@ async function removeBackground(
 	}
 }
 
-async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrText: string, env: any = null): Promise<IMDBProduct | null> {
+async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrText: string, env: any = null, watermarkData: any = null): Promise<IMDBProduct | null> {
     const base64Image = Buffer.from(imageBuffer).toString("base64");
     
     // Read from Cloudflare env bindings if available, otherwise fallback to process.env
-    const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined) || "sk-ws-H.IPDXPL.3Rhx.MEUCIG_trMGvdTN7djTaY4sTk-Mbh7dqwhSlROnqekL9Za6QAiEA1QI7Nmc06KMMqdN4tL8Zl1rAYJMQiKS3z-zszZLvkXk";
+    const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined);
     const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-e8idycj2w4qgstsm.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
 
     if (!apiKey) {
-        console.error("[Qwen3-VL] Missing QWEN_API_KEY in environment");
-        return null;
+        throw new Error("Missing QWEN_API_KEY in environment");
     }
 
-    const prompt = `You are a precise product data extraction assistant. Extract product details as a JSON object with EXACTLY these fields:
+    let prompt = "";
+    if (watermarkData) {
+        prompt = `You are a precise product data extraction assistant. Extract product details as a JSON object with EXACTLY these fields:
+BARCODE, BRAND, VARIANT, TYPE, FRAGRANCE_FLAVOR, PROMOTION, ADDONS, TAGLINE.
+ALSO, output a nested object named "fieldConfidence" containing a float (0.0 to 1.0) representing your mathematical certainty for each extracted field.
+Note 1: If text is blurry or not explicitly printed, output an empty string "". DO NOT guess.
+Note 2 (CRITICAL): Use the exact raw OCR text below for spelling.
+
+--- FEW-SHOT EXAMPLES ---
+Example 1:
+OCR Text: "BLUE BAND 250G PLASTIC TUB SPREAD FOR BREAD MARAGARINE SALTED UPFIELD GHANA MANUFACTURING LIMITED"
+JSON: {"BARCODE": "6034000482027", "BRAND": "BLUE BAND", "VARIANT": "ORIGINAL", "TYPE": "SALTED MARGARINE", "FRAGRANCE_FLAVOR": "", "PROMOTION": "", "ADDONS": "", "TAGLINE": "LOW FAT SPREAD FOR BREAD"}
+
+Example 2:
+OCR Text: "LELE MAYONNAISE 430G GLASS TUB BOTTLE MAYONNAISE AJC GHANA"
+JSON: {"BARCODE": "106060069411", "BRAND": "LELE", "VARIANT": "", "TYPE": "MAYONNAISE", "FRAGRANCE_FLAVOR": "", "PROMOTION": "", "ADDONS": "", "TAGLINE": ""}
+
+Example 3:
+OCR Text: "MAGGI JOLLOF SEASONING PWDR 8G SACHET NESTLE NIGERIA LTD"
+JSON: {"BARCODE": "6151100033369", "BRAND": "MAGGI", "VARIANT": "", "TYPE": "POWDER", "FRAGRANCE_FLAVOR": "JOLLOF", "PROMOTION": "", "ADDONS": "", "TAGLINE": ""}
+-------------------------
+
+Here is the exact raw text extracted from this image by an enterprise OCR engine:
+---
+${ocrText || "No OCR text provided."}
+---
+${ocrText ? "Use the image for visual layout context, but RELY ENTIRELY on the provided OCR text for the exact spelling of words. Do not hallucinate words that are not in the OCR text!" : "No OCR text was provided. You must read the text directly from the image."}
+Return ONLY valid JSON. Do not wrap in markdown blocks.`;
+    } else {
+        prompt = `You are a precise product data extraction assistant. Extract product details as a JSON object with EXACTLY these fields:
 ITEM_NAME, BARCODE, MANUFACTURER, BRAND, WEIGHT, PACKAGING_TYPE, COUNTRY, VARIANT, TYPE, FRAGRANCE_FLAVOR, PROMOTION, ADDONS, TAGLINE, imageTag.
 ALSO, output a nested object named "fieldConfidence" containing a float (0.0 to 1.0) representing your mathematical certainty for each extracted field.
 Note 1 (CRITICAL): imageTag MUST be the unique serial tag printed on the edge/margin of the photo (e.g., "GH000364912 U-FRESH ORANGE 350ML BOTTLE PLASTIC U-FRESH COMPANY LIMITED"). Extract the COMPLETE string — every word from the audit ID through to the end of the watermark line — do NOT truncate or stop early. EXCLUDE only the final side word (Front/Back/Left/Right/Barcode) if present. DO NOT copy or hallucinate the example tag "GH000364912" if you cannot see a watermark on the image. If you cannot clearly read the watermark on the image, output an empty string "".
@@ -261,15 +290,15 @@ Note 4 (CRITICAL): Use the exact raw OCR text below for spelling.
 --- FEW-SHOT EXAMPLES ---
 Example 1:
 OCR Text: "BLUE BAND 250G PLASTIC TUB SPREAD FOR BREAD MARAGARINE SALTED UPFIELD GHANA MANUFACTURING LIMITED"
-JSON: {"ITEM_NAME": "BLUE BAND 250G PLASTIC TUB SPREAD FOR BREAD MARAGARINE SALTED", "BARCODE": "6034000482027", "MANUFACTURER": "UPFIELD", "BRAND": "BLUE BAND", "WEIGHT": "250G", "PACKAGING_TYPE": "TUB", "COUNTRY": "GHANA", "VARIANT": "ORIGINAL", "TYPE": "SALTED MARGARINE", "FRAGRANCE_FLAVOR": "", "PROMOTION": "", "ADDONS": "", "TAGLINE": "LOW FAT SPREAD FOR BREAD"}
+JSON: {"ITEM_NAME": "BLUE BAND 250G PLASTIC TUB SPREAD FOR BREAD MARAGARINE SALTED UPFIELD GHANA MANUFACTURING LIMITED", "BARCODE": "6034000482027", "MANUFACTURER": "UPFIELD", "BRAND": "BLUE BAND", "WEIGHT": "250G", "PACKAGING_TYPE": "TUB", "COUNTRY": "GHANA", "VARIANT": "ORIGINAL", "TYPE": "SALTED MARGARINE", "FRAGRANCE_FLAVOR": "", "PROMOTION": "", "ADDONS": "", "TAGLINE": "LOW FAT SPREAD FOR BREAD"}
 
 Example 2:
 OCR Text: "LELE MAYONNAISE 430G GLASS TUB BOTTLE MAYONNAISE AJC GHANA"
-JSON: {"ITEM_NAME": "LELE MAYONNAISE 430G GLASS TUB BOTTLE MAYONNAISE", "BARCODE": "106060069411", "MANUFACTURER": "AJC TRADING CO LTD", "BRAND": "LELE", "WEIGHT": "430G", "PACKAGING_TYPE": "GLASS JAR", "COUNTRY": "GHANA", "VARIANT": "", "TYPE": "MAYONNAISE", "FRAGRANCE_FLAVOR": "", "PROMOTION": "", "ADDONS": "", "TAGLINE": ""}
+JSON: {"ITEM_NAME": "LELE MAYONNAISE 430G GLASS TUB BOTTLE MAYONNAISE AJC GHANA", "BARCODE": "106060069411", "MANUFACTURER": "AJC TRADING CO LTD", "BRAND": "LELE", "WEIGHT": "430G", "PACKAGING_TYPE": "GLASS JAR", "COUNTRY": "GHANA", "VARIANT": "", "TYPE": "MAYONNAISE", "FRAGRANCE_FLAVOR": "", "PROMOTION": "", "ADDONS": "", "TAGLINE": ""}
 
 Example 3:
 OCR Text: "MAGGI JOLLOF SEASONING PWDR 8G SACHET NESTLE NIGERIA LTD"
-JSON: {"ITEM_NAME": "MAGGI JOLLOF SEASONING PWDR 8G SACHET", "BARCODE": "6151100033369", "MANUFACTURER": "NESTLE", "BRAND": "MAGGI", "WEIGHT": "8G", "PACKAGING_TYPE": "SACHET", "COUNTRY": "NIGERIA", "VARIANT": "", "TYPE": "POWDER", "FRAGRANCE_FLAVOR": "JOLLOF", "PROMOTION": "", "ADDONS": "", "TAGLINE": ""}
+JSON: {"ITEM_NAME": "MAGGI JOLLOF SEASONING PWDR 8G SACHET NESTLE NIGERIA LTD", "BARCODE": "6151100033369", "MANUFACTURER": "NESTLE", "BRAND": "MAGGI", "WEIGHT": "8G", "PACKAGING_TYPE": "SACHET", "COUNTRY": "NIGERIA", "VARIANT": "", "TYPE": "POWDER", "FRAGRANCE_FLAVOR": "JOLLOF", "PROMOTION": "", "ADDONS": "", "TAGLINE": ""}
 -------------------------
 
 Here is the exact raw text extracted from this image by an enterprise OCR engine:
@@ -278,6 +307,7 @@ ${ocrText || "No OCR text provided."}
 ---
 ${ocrText ? "Use the image for visual layout context, but RELY ENTIRELY on the provided OCR text for the exact spelling of words. Do not hallucinate words that are not in the OCR text!" : "No OCR text was provided. You must read the text directly from the image."}
 Return ONLY valid JSON. Do not wrap in markdown blocks.`;
+    }
 
     const response = await fetch(endpoint, {
         method: "POST",
@@ -328,22 +358,31 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
         }
         
         const parsed = JSON.parse(jsonStr.trim());
+        const fieldConfidence = parsed.fieldConfidence || {};
+
+        const enforceThreshold = (key: string, value: string) => {
+            if (value && typeof fieldConfidence[key] === 'number' && fieldConfidence[key] < FIELD_EMPTY_THRESHOLD) {
+                return "";
+            }
+            return value;
+        };
+
         return {
-            ITEM_NAME: parsed.ITEM_NAME || "",
-            BARCODE: parsed.BARCODE || "",
-            MANUFACTURER: parsed.MANUFACTURER || "",
-            BRAND: parsed.BRAND || "",
-            WEIGHT: parsed.WEIGHT || "",
-            PACKAGING_TYPE: parsed.PACKAGING_TYPE || "",
-            COUNTRY: parsed.COUNTRY || "",
-            VARIANT: parsed.VARIANT || "",
-            TYPE: parsed.TYPE || "",
-            FRAGRANCE_FLAVOR: parsed.FRAGRANCE_FLAVOR || "",
-            PROMOTION: parsed.PROMOTION || "",
-            ADDONS: parsed.ADDONS || "",
-            TAGLINE: parsed.TAGLINE || "",
+            ITEM_NAME: enforceThreshold("ITEM_NAME", parsed.ITEM_NAME || ""),
+            BARCODE: enforceThreshold("BARCODE", parsed.BARCODE || ""),
+            MANUFACTURER: enforceThreshold("MANUFACTURER", parsed.MANUFACTURER || ""),
+            BRAND: enforceThreshold("BRAND", parsed.BRAND || ""),
+            WEIGHT: enforceThreshold("WEIGHT", parsed.WEIGHT || ""),
+            PACKAGING_TYPE: enforceThreshold("PACKAGING_TYPE", parsed.PACKAGING_TYPE || ""),
+            COUNTRY: enforceThreshold("COUNTRY", parsed.COUNTRY || ""),
+            VARIANT: enforceThreshold("VARIANT", parsed.VARIANT || ""),
+            TYPE: enforceThreshold("TYPE", parsed.TYPE || ""),
+            FRAGRANCE_FLAVOR: enforceThreshold("FRAGRANCE_FLAVOR", parsed.FRAGRANCE_FLAVOR || ""),
+            PROMOTION: enforceThreshold("PROMOTION", parsed.PROMOTION || ""),
+            ADDONS: enforceThreshold("ADDONS", parsed.ADDONS || ""),
+            TAGLINE: enforceThreshold("TAGLINE", parsed.TAGLINE || ""),
             imageTag: parsed.imageTag || "",
-            fieldConfidence: parsed.fieldConfidence || {},
+            fieldConfidence: fieldConfidence,
             sourceImages: [fileName],
             rawVisionData: { [fileName]: parsed }
         };
@@ -354,12 +393,11 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
 }
 
 async function extractWatermarkWithQwen(croppedBase64: string, env: any = null): Promise<string> {
-    const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined) || "sk-ws-H.IPDXPL.3Rhx.MEUCIG_trMGvdTN7djTaY4sTk-Mbh7dqwhSlROnqekL9Za6QAiEA1QI7Nmc06KMMqdN4tL8Zl1rAYJMQiKS3z-zszZLvkXk";
+    const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined);
     const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-e8idycj2w4qgstsm.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
 
     if (!apiKey) {
-        console.error("[Qwen3-VL] Missing QWEN_API_KEY for watermark extraction");
-        return "";
+        throw new Error("Missing QWEN_API_KEY for watermark extraction");
     }
 
     const prompt = `Read the watermark text printed along the edge/margin of this image.
@@ -509,12 +547,40 @@ export async function processJob(
 			// if all OCR attempts failed — saving up to 3 VL calls per image.
 			let watermarkData: any = null;
 			let bestEdgeOcr = ""; // best edge OCR text for watermark parsing
+			let cachedBottomBuffer: ArrayBuffer | null = null;
 			if (env?.IMAGES) {
-				const margins: ("bottom" | "top" | "left" | "right")[] = ["bottom", "top", "left", "right"];
-				for (const margin of margins) {
-					try {
+				try {
+					const bottomBuffer = await cropImageMargin(buffer, "bottom", env);
+					cachedBottomBuffer = bottomBuffer;
+					if (bottomBuffer !== buffer) {
+						const croppedBase64 = Buffer.from(bottomBuffer).toString("base64");
+						let croppedOcr = "";
+						if (ocrConfig.provider === "rolmocr") {
+							croppedOcr = await extractWithRolmOCR(croppedBase64, env, null, `${fileName}_bottom`);
+						} else if (ocrConfig.provider === "google") {
+							croppedOcr = await extractWithGoogleVision(croppedBase64, env, null, `${fileName}_bottom`);
+						}
+						bestEdgeOcr = croppedOcr;
+						if (croppedOcr) {
+							for (const line of croppedOcr.split('\n')) {
+								const parsed = parseWatermark(line);
+								if (parsed?.auditId) {
+									watermarkData = parsed;
+									await reporter.addLog("watermark", `[${fileName}] Watermark found on bottom edge (OCR): ${parsed.auditId}`, "success");
+									break;
+								}
+							}
+						}
+					}
+				} catch (cropErr) {
+					console.error(`[Pipeline] Bottom margin crop flow failed:`, cropErr);
+				}
+
+				if (!watermarkData) {
+					const margins: ("top" | "left" | "right")[] = ["top", "left", "right"];
+					const edgeResults = await Promise.allSettled(margins.map(async (margin) => {
 						const croppedBuffer = await cropImageMargin(buffer, margin, env);
-						if (croppedBuffer === buffer) continue; // crop failed, skip
+						if (croppedBuffer === buffer) return { margin, ocr: "", parsed: null };
 						const croppedBase64 = Buffer.from(croppedBuffer).toString("base64");
 						let croppedOcr = "";
 						if (ocrConfig.provider === "rolmocr") {
@@ -522,41 +588,43 @@ export async function processJob(
 						} else if (ocrConfig.provider === "google") {
 							croppedOcr = await extractWithGoogleVision(croppedBase64, env, null, `${fileName}_${margin}`);
 						}
-						// Track the best OCR result for later fallback
-						if (croppedOcr && croppedOcr.length > bestEdgeOcr.length) {
-							bestEdgeOcr = croppedOcr;
-						}
+						let parsed: any = null;
 						if (croppedOcr) {
 							for (const line of croppedOcr.split('\n')) {
-								const parsed = parseWatermark(line);
-								if (parsed?.auditId) {
-									watermarkData = parsed;
-									await reporter.addLog("watermark", `[${fileName}] Watermark found on ${margin} edge (OCR): ${parsed.auditId}`, "success");
+								const p = parseWatermark(line);
+								if (p?.auditId) {
+									parsed = p;
 									break;
 								}
 							}
 						}
-					} catch (cropErr) {
-						console.error(`[Pipeline] Margin crop flow failed for ${margin}:`, cropErr);
+						return { margin, ocr: croppedOcr, parsed };
+					}));
+
+					for (const res of edgeResults) {
+						if (res.status === "fulfilled" && res.value) {
+							if (res.value.ocr.length > bestEdgeOcr.length) {
+								bestEdgeOcr = res.value.ocr;
+							}
+							if (!watermarkData && res.value.parsed) {
+								watermarkData = res.value.parsed;
+								await reporter.addLog("watermark", `[${fileName}] Watermark found on ${res.value.margin} edge (OCR): ${watermarkData.auditId}`, "success");
+							}
+						}
 					}
-					if (watermarkData) break;
 				}
-				// If OCR didn't find a watermark on any edge, fall back to Qwen VL
-				// on the bottom crop only (most likely edge, one call max).
-				if (!watermarkData && bestEdgeOcr.length < 8) {
+
+				if (!watermarkData && bestEdgeOcr.length < 8 && cachedBottomBuffer && cachedBottomBuffer !== buffer) {
 					try {
-						const croppedBuffer = await cropImageMargin(buffer, "bottom", env);
-						if (croppedBuffer !== buffer) {
-							const croppedBase64 = Buffer.from(croppedBuffer).toString("base64");
-							const qwenResult = await extractWatermarkWithQwen(croppedBase64, env);
-							if (qwenResult) {
-								for (const line of qwenResult.split('\n')) {
-									const parsed = parseWatermark(line);
-									if (parsed?.auditId) {
-										watermarkData = parsed;
-										await reporter.addLog("watermark", `[${fileName}] Watermark found on bottom edge (Qwen-VL fallback): ${parsed.auditId}`, "success");
-										break;
-									}
+						const croppedBase64 = Buffer.from(cachedBottomBuffer).toString("base64");
+						const qwenResult = await extractWatermarkWithQwen(croppedBase64, env);
+						if (qwenResult) {
+							for (const line of qwenResult.split('\n')) {
+								const parsed = parseWatermark(line);
+								if (parsed?.auditId) {
+									watermarkData = parsed;
+									await reporter.addLog("watermark", `[${fileName}] Watermark found on bottom edge (Qwen-VL fallback): ${parsed.auditId}`, "success");
+									break;
 								}
 							}
 						}
@@ -621,7 +689,7 @@ export async function processJob(
             // Step 2: Cognition (Qwen3-VL) — receives clean background-removed buffer if watermark
             // was already found, otherwise receives the original buffer so it can see the watermark margins.
             const cognitionBuffer = watermarkData ? cleanBuffer : buffer;
-            const extracted = await extractWithQwen(cognitionBuffer, fileName, ocrText, env);
+            const extracted = await extractWithQwen(cognitionBuffer, fileName, ocrText, env, watermarkData);
             if (extracted) {
                 // Sanitize hallucinated prompt example tags (e.g. GH000364912)
                 if (extracted.imageTag && (extracted.imageTag.includes("GH000364912") || extracted.imageTag.toUpperCase().includes("U-FRESH ORANGE"))) {
@@ -728,6 +796,7 @@ export async function processJob(
 
         // 3. Save to Database
         const newRecordIds: string[] = [];
+        const recordsToInsert = [];
         for (const product of mergedProducts) {
             const recordId = crypto.randomUUID();
             newRecordIds.push(recordId);
@@ -735,24 +804,25 @@ export async function processJob(
             const isMissingCritical = !product.BARCODE || !product.ITEM_NAME || !product.BRAND;
             
             const fieldMeta: Record<string, any> = {};
-            let totalConf = 0;
-            let confCount = 0;
+            let weightedTotalConf = 0;
+            let totalWeight = 0;
             
             if (product.fieldConfidence) {
                 for (const key of Object.keys(product.fieldConfidence)) {
                     if ((product as any)[key]) { // Only count if the field actually has a value
                         const val = product.fieldConfidence[key];
-                        totalConf += val;
-                        confCount++;
+                        const w = FIELD_WEIGHTS[key as keyof typeof FIELD_WEIGHTS] || 0.1;
+                        weightedTotalConf += (val * w);
+                        totalWeight += w;
                         fieldMeta[key] = { value: (product as any)[key], source: "AI Extraction Pipeline", confidence: val };
                     }
                 }
             }
             
-            let confidence = confCount > 0 ? (totalConf / confCount) : 0;
+            let confidence = totalWeight > 0 ? (weightedTotalConf / totalWeight) : 0;
             
             // Fallback to old density calculation if AI didn't provide fieldConfidence
-            if (confCount === 0) {
+            if (totalWeight === 0) {
                 const filledFieldsCount = Object.keys(product).filter(k => 
                     k !== "imageTag" && k !== "sourceImages" && !!(product as any)[k]
                 ).length;
@@ -766,7 +836,7 @@ export async function processJob(
             
             const flagged = confidence < 0.75;
 
-            await db.insert(imdbRecords).values({
+            recordsToInsert.push({
                 id: recordId,
                 jobId,
                 organisationId: orgId,
@@ -800,6 +870,12 @@ export async function processJob(
             await reporter.addLog("database", `Saved record: ${product.ITEM_NAME || product.BARCODE}`, "success");
         }
 
+        if (recordsToInsert.length > 0) {
+            for (let i = 0; i < recordsToInsert.length; i += 50) {
+                await db.insert(imdbRecords).values(recordsToInsert.slice(i, i + 50));
+            }
+        }
+
         await reporter.updateNodeState("database", "completed");
         await reporter.updateEdgeState("e3", true, "#10b981");
         await reporter.updateNodeState("deduplication", "active");
@@ -827,9 +903,29 @@ export async function processJob(
                     continue;
                 }
 
+                const newName = normalizeField("ITEM_NAME", newRec.ITEM_NAME).toLowerCase();
+                const existingName = normalizeField("ITEM_NAME", existing.ITEM_NAME).toLowerCase();
                 const newBrand = normalizeField("BRAND", newRec.BRAND);
                 const existingBrand = normalizeField("BRAND", existing.BRAND);
+                
+                if (isSafeSubstringMatch(newName, existingName, newBrand.toLowerCase(), existingBrand.toLowerCase())) {
+                    dupInserts.push({
+                        id: crypto.randomUUID(),
+                        orgId,
+                        recordAId: newRec.id,
+                        recordBId: existing.id,
+                        similarityScore: 0.9,
+                        reason: "NAME_MATCH",
+                        status: "PENDING",
+                    });
+                    continue;
+                }
+
                 if (newBrand && existingBrand && newBrand.toLowerCase() === existingBrand.toLowerCase() && newRec.WEIGHT === existing.WEIGHT) {
+                    // FRAGRANCE_FLAVOR conflict guard
+                    if (newRec.FRAGRANCE_FLAVOR && existing.FRAGRANCE_FLAVOR && newRec.FRAGRANCE_FLAVOR.toLowerCase() !== existing.FRAGRANCE_FLAVOR.toLowerCase()) {
+                        continue;
+                    }
                     dupInserts.push({
                         id: crypto.randomUUID(),
                         orgId,
@@ -844,8 +940,8 @@ export async function processJob(
         }
 
         if (dupInserts.length > 0) {
-            for (const dup of dupInserts) {
-                await db.insert(duplicatePairs).values(dup);
+            for (let i = 0; i < dupInserts.length; i += 50) {
+                await db.insert(duplicatePairs).values(dupInserts.slice(i, i + 50));
             }
             await reporter.addLog("deduplication", `Found ${dupInserts.length} potential duplicate pairs`, "warning");
         }
