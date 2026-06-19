@@ -6,6 +6,8 @@ import { CustomNode, type CustomNodeData } from './CustomNode.tsx'
 import { usePipelineStream } from '../../hooks/usePipelineStream'
 import { NodeDetailsPanel } from './NodeDetailsPanel'
 
+import { AlertCircle, CheckCircle2 } from 'lucide-react'
+
 const nodeTypes = {
   customNode: CustomNode,
 }
@@ -40,6 +42,13 @@ export function PipelineVisualizer({ jobId }: { jobId: string }) {
     return data.logs[selectedNodeId] || []
   }, [data, selectedNodeId])
 
+  const overallStatus = useMemo(() => {
+    if (!nodes.length) return 'pending'
+    if (nodes.some(n => n.data.status === 'failed')) return 'failed'
+    if (nodes.every(n => n.data.status === 'completed')) return 'completed'
+    return 'processing'
+  }, [nodes])
+
   if (isLoading) {
     return (
       <div className="w-full h-full min-h-[80vh] flex items-center justify-center rounded-xl overflow-hidden bg-background">
@@ -53,6 +62,18 @@ export function PipelineVisualizer({ jobId }: { jobId: string }) {
 
   return (
     <div className="w-full h-full min-h-[80vh] rounded-xl overflow-hidden bg-background relative">
+      {overallStatus === 'failed' && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-4 py-2 bg-destructive/10 border border-destructive/20 text-destructive rounded-full shadow-lg backdrop-blur-md">
+          <AlertCircle className="w-4 h-4" />
+          <span className="text-sm font-bold tracking-wide">Pipeline Failed</span>
+        </div>
+      )}
+      {overallStatus === 'completed' && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-4 py-2 bg-success/10 border border-success/20 text-success-foreground rounded-full shadow-lg backdrop-blur-md">
+          <CheckCircle2 className="w-4 h-4" />
+          <span className="text-sm font-bold tracking-wide">Pipeline Completed</span>
+        </div>
+      )}
       <ReactFlow
         nodes={nodes}
         edges={edges}

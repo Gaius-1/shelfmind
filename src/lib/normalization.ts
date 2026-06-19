@@ -22,6 +22,12 @@ export function normalizeBarcode(rawBarcode: string): string {
 	return rawBarcode.replace(/\D/g, "");
 }
 
+const BRAND_PACKAGING_OVERRIDES: Record<string, { matches: string[], override: string }[]> = {
+	"kivo": [
+		{ matches: ["pouch", "sachet", "pack"], override: "POUCH" }
+	]
+};
+
 /**
  * Canonicalizes packaging types to standard labels.
  */
@@ -30,8 +36,12 @@ export function normalizePackaging(raw: string, brand?: string): string {
 	const clean = raw.trim().toLowerCase();
 	const brandClean = brand ? brand.trim().toLowerCase() : "";
 
-	if (brandClean === "kivo" && (clean.includes("pouch") || clean.includes("sachet") || clean.includes("pack"))) {
-		return "POUCH";
+	if (brandClean && BRAND_PACKAGING_OVERRIDES[brandClean]) {
+		for (const rule of BRAND_PACKAGING_OVERRIDES[brandClean]) {
+			if (rule.matches.some(m => clean.includes(m))) {
+				return rule.override;
+			}
+		}
 	}
 
 	if (
@@ -50,6 +60,7 @@ export function normalizePackaging(raw: string, brand?: string): string {
 	if (clean.includes("tub")) return "TUB";
 	if (clean.includes("plastic bag")) return "PLASTIC BAG";
 	if (clean.includes("bag")) return "PLASTIC BAG";
+	if (clean === "wrapped") return "WRAPPED";
 	if (clean.includes("wrapper") || clean.includes("wrap")) return "WRAPPER";
 	if (clean.includes("tetra")) return "TETRA PAK";
 	if (clean.includes("pack") || clean.includes("packet")) return "PACK";
@@ -137,14 +148,12 @@ const MANUFACTURER_MAP: Record<string, string> = {
 	"nutrifoods ghana limited": "NUTRIFOODS",
 	"sister sardine & mackerel": "SISTER SARDINE & MACKEREL VENTURES",
 	"xiaman oasis food company ltd": "SISTER SARDINE & MACKEREL VENTURES",
-	"china": "GEE TRADING SAL",
 	"d- u fresh co.ltd": "U-FRESH ENTERPRISES",
 	"u fresh co ltd.": "U-FRESH ENTERPRISES",
 	"aqfrsh": "AQUAFRESH LIMITED",
 	"nat vet phat food co. limited vietnam": "NAM VIET PHAT FOOD CO. LIMITED",
 	"b-diet ltd tamale": "B-DIET LTD",
 	"diakite ramta commercante": "SENICO",
-	"cote d'ivoire": "C'PROPRE",
 	"sunda purecare ltd company": "HOMEPRO COMPANY LTD",
 	"meiji ghana ltd.": "LGD LIMITED",
 	"sdtm": "S.D.T.M",
@@ -162,7 +171,10 @@ const MANUFACTURER_MAP: Record<string, string> = {
 	"gb food ghana": "GB FOODS",
 	"gb foods ghana": "GB FOODS",
 	"zhejiang native produce & animal co.ltd china": "ZHEJIANG NATIVE PRODUCE & ANIMAL CO LTD",
-	"synergy entreprises ( fze) china": "SYNERGY ENTREPRISES ( FZE)"
+	"synergy entreprises ( fze) china": "SYNERGY ENTREPRISES ( FZE)",
+	"menkish impex ltd": "MENKISH IMPEX",
+	"synergy entreprises (fze)": "SYNERGY ENTREPRISES ( FZE)",
+	"zhejiang native produce & animal co. ltd": "ZHEJIANG NATIVE PRODUCE & ANIMAL CO LTD"
 };
 
 export function normalizeManufacturer(raw: string): string {
@@ -176,6 +188,10 @@ export function normalizeManufacturer(raw: string): string {
 	if (clean.includes("unilever")) return "UNILEVER";
 	if (clean.includes("gb food")) return "GB FOODS";
 	if (clean.includes("promasidor")) return "PROMASIDOR";
+	if (clean.includes("menkish impex")) return "MENKISH IMPEX";
+	if (clean.includes("synergy entreprises")) return "SYNERGY ENTREPRISES ( FZE)";
+	if (clean.includes("zhejiang native produce")) return "ZHEJIANG NATIVE PRODUCE & ANIMAL CO LTD";
+	if (clean.includes("nam viet phat")) return "NAM VIET PHAT FOOD CO. LIMITED";
 	
 	return raw.trim().toUpperCase();
 }

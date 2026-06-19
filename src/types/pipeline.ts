@@ -36,7 +36,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 		data: {
 			title: "RolmOCR Transcription",
 			description: "Perception: High-fidelity document text extraction.",
-			iconType: "vision",
+			iconType: "ocr",
 			badge: "REDUCTO",
 			status: "pending",
 		},
@@ -60,7 +60,7 @@ export const initialNodes: Node<CustomNodeData>[] = [
 		data: {
 			title: "BG Removal",
 			description: "AI segmentation isolates product from shelf background.",
-			iconType: "vision",
+			iconType: "bgremoval",
 			badge: "AI",
 			status: "pending",
 		},

@@ -208,7 +208,7 @@ export function PipelineJobCard({ job }: PipelineJobCardProps) {
               </Link>
             </div>
           )}
-          {isProcessing && (
+          {isLive && (
             <Link
               to="/dashboard/jobs/$jobId"
               params={{ jobId: job.id } as any}
@@ -218,7 +218,7 @@ export function PipelineJobCard({ job }: PipelineJobCardProps) {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500" />
               </span>
-              Live
+              Watch live
               <ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" />
             </Link>
           )}
