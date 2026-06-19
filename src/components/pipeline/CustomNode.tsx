@@ -18,7 +18,9 @@ import {
 	TaskDone01Icon,
 	Database01Icon,
 	SearchList01Icon,
+	SearchList01Icon,
 	PackageIcon,
+	Eraser01Icon,
 } from "@hugeicons/core-free-icons";
 
 const iconMap: Record<string, any> = {
@@ -26,6 +28,7 @@ const iconMap: Record<string, any> = {
 	barcode: AiScanIcon,
 	ocr: AiScanIcon,
 	vision: PackageIcon,
+	bgremoval: Eraser01Icon,
 	grouping: Layers01Icon,
 	aggregation: GitMergeIcon,
 	normalization: TaskDone01Icon,
@@ -46,7 +49,7 @@ export type CustomNodeData = {
 	totalCount?: number;
 };
 
-export const CustomNode = memo(({ data, isConnectable }: NodeProps) => {
+export const CustomNode = memo(({ id, data, isConnectable }: NodeProps) => {
 	const nodeData = data as CustomNodeData;
 
 	// Status styling
@@ -91,12 +94,14 @@ export const CustomNode = memo(({ data, isConnectable }: NodeProps) => {
 		<div
 			className={`w-[280px] ${ringClass} rounded-(--frame-radius) transition-all duration-300`}
 		>
-			<Handle
-				type="target"
-				position={Position.Left}
-				isConnectable={isConnectable}
-				className="w-3 h-3 border-2 border-background bg-muted-foreground"
-			/>
+			{id !== "upload" && (
+				<Handle
+					type="target"
+					position={Position.Left}
+					isConnectable={isConnectable}
+					className="w-3 h-3 border-2 border-background bg-muted-foreground"
+				/>
+			)}
 
 			<Frame spacing="sm" className="shadow-lg bg-card">
 				<FramePanel>
@@ -108,6 +113,11 @@ export const CustomNode = memo(({ data, isConnectable }: NodeProps) => {
 							<FrameTitle className="text-[13px]">{nodeData.title}</FrameTitle>
 						</div>
 						<div className="flex items-center gap-1.5">
+							{nodeData.totalCount !== undefined && nodeData.processedCount !== undefined && (
+								<span className="text-[10px] font-mono font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-sm">
+									{nodeData.processedCount} / {nodeData.totalCount}
+								</span>
+							)}
 							{nodeData.badge && (
 								<Badge
 									variant="outline"
@@ -126,12 +136,14 @@ export const CustomNode = memo(({ data, isConnectable }: NodeProps) => {
 				</FramePanel>
 			</Frame>
 
-			<Handle
-				type="source"
-				position={Position.Right}
-				isConnectable={isConnectable}
-				className="w-3 h-3 border-2 border-background bg-muted-foreground"
-			/>
+			{id !== "deduplication" && (
+				<Handle
+					type="source"
+					position={Position.Right}
+					isConnectable={isConnectable}
+					className="w-3 h-3 border-2 border-background bg-muted-foreground"
+				/>
+			)}
 		</div>
 	);
 });
