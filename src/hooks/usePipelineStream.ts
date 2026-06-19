@@ -123,7 +123,7 @@ export function usePipelineStream(jobId: string) {
         ws.close()
       }
     }
-  }, [data, jobId, queryClient])
+  }, [jobId, queryClient])
 
   return {
     data,
