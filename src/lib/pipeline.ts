@@ -564,7 +564,12 @@ export async function processJob(
 						if (croppedOcr) {
 							for (const line of croppedOcr.split('\n')) {
 								const parsed = parseWatermark(line);
-								if (parsed && (parsed.auditId || parsed.productDescription.length > 10)) {
+								// Tightened validation: require auditId OR (productDescription > 10 AND at least one other structured field)
+								const hasStrongIdentifiers = parsed && (
+									parsed.auditId ||
+									(parsed.productDescription.length > 10 && (parsed.weight || parsed.packaging || parsed.manufacturer))
+								);
+								if (hasStrongIdentifiers) {
 									watermarkData = parsed;
 									await reporter.addLog("watermark", `[${fileName}] Watermark found on bottom edge (OCR): ${parsed.auditId || 'non-standard ID'}`, "success");
 									break;
@@ -592,7 +597,12 @@ export async function processJob(
 						if (croppedOcr) {
 							for (const line of croppedOcr.split('\n')) {
 								const p = parseWatermark(line);
-								if (p && (p.auditId || p.productDescription.length > 10)) {
+								// Tightened validation: require auditId OR (productDescription > 10 AND at least one other structured field)
+								const hasStrongIdentifiers = p && (
+									p.auditId ||
+									(p.productDescription.length > 10 && (p.weight || p.packaging || p.manufacturer))
+								);
+								if (hasStrongIdentifiers) {
 									parsed = p;
 									break;
 								}
@@ -608,7 +618,7 @@ export async function processJob(
 							}
 							if (!watermarkData && res.value.parsed) {
 								watermarkData = res.value.parsed;
-								await reporter.addLog("watermark", `[${fileName}] Watermark found on ${res.value.margin} edge (OCR): ${watermarkData.auditId}`, "success");
+								await reporter.addLog("watermark", `[${fileName}] Watermark found on ${res.value.margin} edge (OCR): ${watermarkData.auditId || 'non-standard ID'}${watermarkData.productDescription ? ' - ' + watermarkData.productDescription.substring(0, 40) : ''}`, "success");
 							}
 						}
 					}
@@ -621,7 +631,12 @@ export async function processJob(
 						if (qwenResult) {
 							for (const line of qwenResult.split('\n')) {
 								const parsed = parseWatermark(line);
-								if (parsed && (parsed.auditId || parsed.productDescription.length > 10)) {
+								// Tightened validation: require auditId OR (productDescription > 10 AND at least one other structured field)
+								const hasStrongIdentifiers = parsed && (
+									parsed.auditId ||
+									(parsed.productDescription.length > 10 && (parsed.weight || parsed.packaging || parsed.manufacturer))
+								);
+								if (hasStrongIdentifiers) {
 									watermarkData = parsed;
 									await reporter.addLog("watermark", `[${fileName}] Watermark found on bottom edge (Qwen-VL fallback): ${parsed.auditId || 'non-standard ID'}`, "success");
 									break;
