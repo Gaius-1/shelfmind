@@ -871,13 +871,11 @@ export async function processJob(
         }
 
         if (recordsToInsert.length > 0) {
-            await db.transaction(async (tx) => {
-                for (let i = 0; i < recordsToInsert.length; i += 50) {
-                    await tx.insert(imdbRecords).values(recordsToInsert.slice(i, i + 50));
-                }
-            });
+            for (let i = 0; i < recordsToInsert.length; i += 50) {
+                await db.insert(imdbRecords).values(recordsToInsert.slice(i, i + 50));
+            }
+            await reporter.addLog("database", `Inserted ${recordsToInsert.length} distinct records to DB`, "success");
         }
-
         await reporter.updateNodeState("database", "completed");
         await reporter.updateEdgeState("e3", true, "#10b981");
         await reporter.updateNodeState("deduplication", "active");
@@ -942,11 +940,9 @@ export async function processJob(
         }
 
         if (dupInserts.length > 0) {
-            await db.transaction(async (tx) => {
-                for (let i = 0; i < dupInserts.length; i += 50) {
-                    await tx.insert(duplicatePairs).values(dupInserts.slice(i, i + 50));
-                }
-            });
+            for (let i = 0; i < dupInserts.length; i += 50) {
+                await db.insert(duplicatePairs).values(dupInserts.slice(i, i + 50));
+            }
             await reporter.addLog("deduplication", `Found ${dupInserts.length} potential duplicate pairs`, "warning");
         }
 
