@@ -1,4 +1,4 @@
-import { useState, useDeferredValue, useEffect } from 'react'
+import { useState, useDeferredValue, useEffect, useCallback } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import type { PaginationState, SortingState } from '@tanstack/react-table'
 import { authClient } from '#/lib/auth-client.ts'
@@ -37,15 +37,15 @@ function ProductsContent({ orgId }: { orgId: string }) {
   const [searchInput, setSearchInput] = useState('')
   const search = useDeferredValue(searchInput)
 
-  // Reset to page 1 when search or sorting changes — prevents requesting
-  // a page that no longer exists after the result set has changed.
-  useEffect(() => {
-    setPagination(prev => ({ ...prev, pageIndex: 0 }))
-  }, [searchInput])
-
+  // Reset to page 1 when sorting changes
   useEffect(() => {
     setPagination(prev => ({ ...prev, pageIndex: 0 }))
   }, [sorting])
+
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchInput(value)
+    setPagination(prev => ({ ...prev, pageIndex: 0 }))
+  }, [])
 
   const { data: productsData, isPending, error } = useProducts(
     orgId,
@@ -93,7 +93,7 @@ function ProductsContent({ orgId }: { orgId: string }) {
             pagination={pagination}
             onPaginationChange={setPagination}
             searchValue={searchInput}
-            onSearchChange={setSearchInput}
+            onSearchChange={handleSearchChange}
             sorting={sorting}
             onSortingChange={setSorting}
             totalRecords={total}

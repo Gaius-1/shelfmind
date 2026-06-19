@@ -1,4 +1,4 @@
-import { useMemo, useState, useDeferredValue, useEffect } from 'react'
+import { useMemo, useState, useDeferredValue, useEffect, useCallback } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import type { PaginationState } from '@tanstack/react-table'
 import { authClient } from '#/lib/auth-client.ts'
@@ -117,11 +117,17 @@ function ReviewQueueContent({ orgId, jobId }: ContentProps) {
   }, [records, total])
 
   const handleJobChange = (val: string) => {
+    setPagination({ pageIndex: 0, pageSize: 25 })
     navigate({
       to: '/dashboard/review-queue',
       search: val && val !== 'all' ? { jobId: val } : {},
     })
   }
+
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchInput(value)
+    setPagination(prev => ({ ...prev, pageIndex: 0 }))
+  }, [])
 
   return (
     <div className="flex flex-col gap-6 p-6 lg:p-8 max-w-7xl mx-auto w-full">
@@ -220,7 +226,7 @@ function ReviewQueueContent({ orgId, jobId }: ContentProps) {
             pagination={pagination}
             onPaginationChange={setPagination}
             searchValue={searchInput}
-            onSearchChange={setSearchInput}
+            onSearchChange={handleSearchChange}
             totalRecords={total}
           />
         )}
