@@ -18,7 +18,6 @@ import {
 	TaskDone01Icon,
 	Database01Icon,
 	SearchList01Icon,
-	SearchList01Icon,
 	PackageIcon,
 	Eraser01Icon,
 } from "@hugeicons/core-free-icons";
