@@ -117,7 +117,7 @@ function ReviewQueueContent({ orgId, jobId }: ContentProps) {
   }, [records, total])
 
   const handleJobChange = (val: string) => {
-    setPagination({ pageIndex: 0, pageSize: 25 })
+    setPagination(prev => ({ ...prev, pageIndex: 0 }))
     navigate({
       to: '/dashboard/review-queue',
       search: val && val !== 'all' ? { jobId: val } : {},

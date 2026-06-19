@@ -184,6 +184,7 @@ export function parseWatermark(raw: string): WatermarkData | null {
 		{ key: "cadbury", label: "CADBURY" },
 		{ key: "promasidor", label: "PROMASIDOR" },
 		{ key: "gb food", label: "GB FOODS" },
+		{ key: "gb foods", label: "GB FOODS" },
 		{ key: "cb food", label: "CB FOOD" },
 		{ key: "al ain", label: "AL AIN COMPANY LTD" },
 		{ key: "coca cola", label: "THE COCA COLA COMPANY" },
