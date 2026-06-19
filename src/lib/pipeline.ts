@@ -564,9 +564,9 @@ export async function processJob(
 						if (croppedOcr) {
 							for (const line of croppedOcr.split('\n')) {
 								const parsed = parseWatermark(line);
-								if (parsed?.auditId) {
+								if (parsed && (parsed.auditId || parsed.productDescription.length > 10)) {
 									watermarkData = parsed;
-									await reporter.addLog("watermark", `[${fileName}] Watermark found on bottom edge (OCR): ${parsed.auditId}`, "success");
+									await reporter.addLog("watermark", `[${fileName}] Watermark found on bottom edge (OCR): ${parsed.auditId || 'non-standard ID'}`, "success");
 									break;
 								}
 							}
@@ -592,7 +592,7 @@ export async function processJob(
 						if (croppedOcr) {
 							for (const line of croppedOcr.split('\n')) {
 								const p = parseWatermark(line);
-								if (p?.auditId) {
+								if (p && (p.auditId || p.productDescription.length > 10)) {
 									parsed = p;
 									break;
 								}
@@ -621,9 +621,9 @@ export async function processJob(
 						if (qwenResult) {
 							for (const line of qwenResult.split('\n')) {
 								const parsed = parseWatermark(line);
-								if (parsed?.auditId) {
+								if (parsed && (parsed.auditId || parsed.productDescription.length > 10)) {
 									watermarkData = parsed;
-									await reporter.addLog("watermark", `[${fileName}] Watermark found on bottom edge (Qwen-VL fallback): ${parsed.auditId}`, "success");
+									await reporter.addLog("watermark", `[${fileName}] Watermark found on bottom edge (Qwen-VL fallback): ${parsed.auditId || 'non-standard ID'}`, "success");
 									break;
 								}
 							}
@@ -731,6 +731,12 @@ export async function processJob(
                         if (sideMatch) {
                             extracted.imageSide = sideMatch[1];
                             extracted.imageTag = extracted.imageTag.replace(SIDE_RE, "").trim();
+                        }
+                        
+                        // If Qwen returned an empty ITEM_NAME, populate it from the raw imageTag
+                        if (!extracted.ITEM_NAME || extracted.ITEM_NAME.length < 3) {
+                            const parsedTag = parseWatermark(extracted.imageTag);
+                            extracted.ITEM_NAME = sanitizeItemName(parsedTag ? parsedTag.productDescription : extracted.imageTag);
                         }
                     }
                 }
