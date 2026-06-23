@@ -22,6 +22,22 @@ export function normalizeBarcode(rawBarcode: string): string {
 	return rawBarcode.replace(/\D/g, "");
 }
 
+/**
+ * Validates an EAN-13 barcode using the Luhn check digit algorithm.
+ */
+export function isValidEAN13(barcode: string): boolean {
+	if (!/^\d{13}$/.test(barcode)) return false;
+	
+	let sum = 0;
+	for (let i = 0; i < 12; i++) {
+		const digit = parseInt(barcode[i], 10);
+		sum += i % 2 === 0 ? digit : digit * 3;
+	}
+	
+	const checkDigit = (10 - (sum % 10)) % 10;
+	return checkDigit === parseInt(barcode[12], 10);
+}
+
 const BRAND_PACKAGING_OVERRIDES: Record<string, { matches: string[], override: string }[]> = {
 	"kivo": [
 		{ matches: ["pouch", "sachet", "pack"], override: "POUCH" }
@@ -60,7 +76,7 @@ export function normalizePackaging(raw: string, brand?: string): string {
 	if (clean.includes("tub")) return "TUB";
 	if (clean.includes("plastic bag")) return "PLASTIC BAG";
 	if (clean.includes("bag")) return "PLASTIC BAG";
-	if (clean === "wrapped") return "WRAPPED";
+	if (clean === "wrapped") return "WRAPPER";
 	if (clean.includes("wrapper") || clean.includes("wrap")) return "WRAPPER";
 	if (clean.includes("tetra")) return "TETRA PAK";
 	if (clean.includes("pack") || clean.includes("packet")) return "PACK";
