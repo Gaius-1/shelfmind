@@ -35,9 +35,7 @@ export const isSafeSubstringMatch = (n: string, extN: string, brandA: string, br
 		if (brandA && brandB && brandA === brandB) {
 			let cp = 0;
 			while (cp < n.length && cp < extN.length && n[cp] === extN[cp]) cp++;
-			// If the common prefix is just the brand name, it doesn't mean anything.
-			if (cp <= brandA.length) return false;
-			if (cp >= 8) return true;
+			if (cp >= Math.max(brandA.length + 3, 8)) return true;
 		}
 		return false;
 	}

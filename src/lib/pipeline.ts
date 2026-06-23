@@ -6,7 +6,7 @@ import type { IMDBProduct } from "../types/imdb.ts";
 import { FIELD_WEIGHTS, FIELD_EMPTY_THRESHOLD } from "../types/imdb.ts";
 import { getUpload } from "./storage.ts";
 import { groupAndMergeImages, isSafeSubstringMatch } from "./grouping.ts";
-import { normalizeBarcode, normalizeWeight, normalizePackaging, normalizeCountry, normalizeField, normalizeManufacturer, normalizeBrand } from "./normalization.ts";
+import { normalizeBarcode, normalizeWeight, normalizePackaging, normalizeCountry, normalizeField, normalizeManufacturer, normalizeBrand, isValidEAN13 } from "./normalization.ts";
 import { parseWatermark } from "./watermark-parser.ts";
 
 export class JobReporter {
@@ -456,8 +456,8 @@ function sanitizeItemName(name: string): string {
 	const cleaned = name
 		.replace(/RETAIL\s+AUDIT[^]*?(?=\b[A-Z]{2,}\b)/i, '')
 		.replace(/PRODUCT\s+IMAGES[^]*?(?=\b[A-Z]{2,}\b)/i, '')
-		// Date/time stamp patterns: "SAT APR 25 09:09:48 GMT 2026"
-		.replace(/[A-Z]{3}\s+\d{1,2}\s+[A-Z]{3}\s+\d{2,4}\s+\d{2}:\d{2}:\d{2}\s+[A-Z]+\s+\d{4}\s*/i, '')
+		// Strip everything up to and including the GMT timestamp
+		.replace(/^.*?GMT\s+\d{4}\s*/i, "")
 		// Short label prefixes: "MAR-26 - Product..."
 		.replace(/^[A-Z]{3,10}-?\d{0,2}\s+-\s+/i, '')
 		.trim();
@@ -707,8 +707,9 @@ export async function processJob(
             const extracted = await extractWithQwen(cognitionBuffer, fileName, ocrText, env, watermarkData);
             if (extracted) {
                 // Sanitize hallucinated prompt example tags (e.g. GH000364912)
-                if (extracted.imageTag && (extracted.imageTag.includes("GH000364912") || extracted.imageTag.toUpperCase().includes("U-FRESH ORANGE"))) {
-                    extracted.imageTag = "";
+                if (extracted.imageTag) {
+                    extracted.imageTag = extracted.imageTag.replace(/GH000364912/gi, "").trim();
+                    extracted.imageTag = extracted.imageTag.replace(/U-FRESH ORANGE 350ML BOTTLE PLASTIC U-FRESH COMPANY LIMITED/gi, "").trim();
                 }
 
                 // ── Post-extraction sanitization ─────────────────────────────────────
@@ -758,6 +759,17 @@ export async function processJob(
 
                 // Clear E-number hallucination in any text field (runs in both watermark and non-watermark paths)
                 clearENumberHallucinations(extracted, reporter, fileName);
+
+                // Heuristic Brand Fallback
+                if (!extracted.BRAND && extracted.ITEM_NAME) {
+                    const firstWordMatch = extracted.ITEM_NAME.match(/^[^\s]+/);
+                    if (firstWordMatch) {
+                        const firstWord = firstWordMatch[0];
+                        if (firstWord.length >= 3 && !/^(THE|A|AN|AND|FOR|WITH)$/i.test(firstWord)) {
+                            extracted.BRAND = firstWord;
+                        }
+                    }
+                }
 
                 // Attach the OCR text to the product so it saves to the DB later
                 if (ocrText) {
@@ -853,6 +865,12 @@ export async function processJob(
             // Penalize confidence if critical fields are missing
             if (isMissingCritical) {
                 confidence = Math.min(confidence, 0.70);
+            }
+            if (product.BARCODE) {
+                const cleanedBarcode = normalizeBarcode(product.BARCODE);
+                if (cleanedBarcode.length === 13 && !isValidEAN13(cleanedBarcode)) {
+                    confidence = Math.min(confidence, 0.70);
+                }
             }
             
             const flagged = confidence < 0.75;
