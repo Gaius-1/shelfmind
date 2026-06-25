@@ -165,6 +165,7 @@ function ExportsContent({ orgId }: { orgId: string }) {
                       size="sm"
                       disabled={exportingJobId === job.id}
                       onClick={() => handleGenerateAndDownload(job.id)}
+                      aria-label={exportingJobId === job.id ? "Generating export" : "Download export"}
                       className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 dark:text-indigo-400 font-bold transition-colors h-8 shrink-0"
                     >
                       {exportingJobId === job.id ? (
