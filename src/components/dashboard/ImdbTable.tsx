@@ -669,15 +669,13 @@ export function ImdbTable({
               const firstImage = images[0]
 
               // Get extracted values
-              const fieldMeta = row.original.fieldMetadata || {}
-              const conf = fieldMeta.confidenceScore ?? 0
-              const flagged = fieldMeta.isFlagged ?? false
+              const conf = row.original.confidence ?? 0
+              const flagged = row.original.flagged ?? false
               
-              const rawExt = row.original.rawExtraction || {}
-              const itemName = rawExt.ITEM_NAME || rawExt.item_name || rawExt.Item_Name || 'Unknown Product'
-              const brand = rawExt.BRAND || rawExt.brand || rawExt.Brand || ''
-              const barcode = rawExt.BARCODE || rawExt.barcode || rawExt.Barcode || ''
-              const qty = rawExt.QUANTITY || rawExt.quantity || rawExt.Quantity || ''
+              const itemName = row.original.ITEM_NAME || 'Unknown Product'
+              const brand = row.original.BRAND || ''
+              const barcode = row.original.BARCODE || ''
+              const qty = row.original.WEIGHT || ''
 
               return (
                 <button
