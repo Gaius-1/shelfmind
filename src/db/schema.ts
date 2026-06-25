@@ -160,6 +160,8 @@ export const imdbRecords = sqliteTable('imdb_records', {
   orgIdx: index('idx_imdb_org_id').on(table.organisationId),
   barcodeIdx: index('idx_imdb_barcode').on(table.BARCODE),
   groupKeyIdx: index('idx_imdb_group_key').on(table.productGroupKey),
+  orgStatusIdx: index('idx_imdb_org_status').on(table.organisationId, table.status),
+  orgStatusCreatedIdx: index('idx_imdb_org_status_created').on(table.organisationId, table.status, table.createdAt),
 }))
 
 // ─── Duplicate Pairs (Pre-Calculated Async Detection) ────────────────────────
