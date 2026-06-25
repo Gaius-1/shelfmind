@@ -1,6 +1,6 @@
 import { db } from "../db/index.ts";
 import { jobs, imdbRecords, duplicatePairs } from "../db/schema.ts";
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and, ne, inArray } from "drizzle-orm";
 import pLimit from "p-limit";
 import type { IMDBProduct } from "../types/imdb.ts";
 import { FIELD_WEIGHTS, FIELD_EMPTY_THRESHOLD } from "../types/imdb.ts";
@@ -8,6 +8,7 @@ import { getUpload } from "./storage.ts";
 import { groupAndMergeImages, isSafeSubstringMatch } from "./grouping.ts";
 import { normalizeBarcode, normalizeWeight, normalizePackaging, normalizeCountry, normalizeField, normalizeManufacturer, normalizeBrand, isValidEAN13 } from "./normalization.ts";
 import { parseWatermark } from "./watermark-parser.ts";
+import { hashImage, getCachedExtraction, putCachedExtraction, invalidateStats } from "./kv-cache.ts";
 
 export class JobReporter {
 	private stub: any = null;
@@ -535,7 +536,36 @@ export async function processJob(
             if (!buffer) {
                 await reporter.addLog("upload", `Could not load image: ${fileName}`, "error");
                 return;
-            }			// Step 1: Dedicated watermark scan — crop each edge at high resolution FIRST.
+            }
+
+            const imageHash = await hashImage(buffer);
+            const cached = await getCachedExtraction(orgId, imageHash);
+            if (cached) {
+                const product = JSON.parse(JSON.stringify(cached)) as IMDBProduct;
+                
+                product.sourceImages = [fileName];
+                if (product.rawVisionData) {
+                    const newRawVisionData: any = {};
+                    for (const k of Object.keys(product.rawVisionData)) {
+                        if (k.endsWith("_ocr")) newRawVisionData[`${fileName}_ocr`] = product.rawVisionData[k];
+                        else if (k.endsWith("_watermark")) newRawVisionData[`${fileName}_watermark`] = product.rawVisionData[k];
+                        else newRawVisionData[fileName] = product.rawVisionData[k];
+                    }
+                    product.rawVisionData = newRawVisionData;
+                    
+                    if (newRawVisionData[`${fileName}_watermark`]) {
+                        anyWatermarkFound = true;
+                    }
+                }
+                
+                rawExtractions.push(product);
+                await reporter.addLog("structured", `[${fileName}] Cache HIT — skipped all AI`, "success");
+                processed++;
+                const progressPercent = Math.min(60, 10 + Math.round((processed / imageKeys.length) * 50));
+                await db.update(jobs).set({ progress: progressPercent }).where(eq(jobs.id, jobId));
+                return;
+            }
+			// Step 1: Dedicated watermark scan — crop each edge at high resolution FIRST.
 			// The watermark is printed in small text on the image border. Running OCR on
 			// an edge-anchored 480px strip upscaled 2× (to 960px) gives OCR engines ~40px
 			// character height, which is well within reliable read range.
@@ -782,6 +812,7 @@ export async function processJob(
                     await reporter.addLog("ocr", successMessage, "success");
                 }
                 rawExtractions.push(extracted);
+                await putCachedExtraction(orgId, imageHash, extracted);
                 await reporter.addLog("structured", `[${fileName}] Data extracted successfully by Qwen3-VL${extracted.imageSide ? ` (${extracted.imageSide} side)` : ""}`, "success");
             } else {
                 await reporter.addLog("structured", `[${fileName}] Failed to extract data`, "error");
@@ -906,14 +937,14 @@ export async function processJob(
                 fieldMetadata: fieldMeta, 
                 productGroupKey: product.imageTag || product.BARCODE || "unknown",
             });
-            await reporter.addLog("database", `Saved record: ${product.ITEM_NAME || product.BARCODE}`, "success");
         }
 
         if (recordsToInsert.length > 0) {
-            await db.transaction(async (tx) => {
-                for (let i = 0; i < recordsToInsert.length; i += 50) {
-                    await tx.insert(imdbRecords).values(recordsToInsert.slice(i, i + 50));
-                }
+            const CHUNK = 20;
+            const chunks: any[] = [];
+            for (let i = 0; i < recordsToInsert.length; i += CHUNK) chunks.push(recordsToInsert.slice(i, i + CHUNK));
+            await db.transaction(async (tx: any) => {
+                await Promise.all(chunks.map(c => tx.insert(imdbRecords).values(c)));
             });
         }
 
@@ -923,15 +954,34 @@ export async function processJob(
 
         // 4. Merge Suggestions (Duplicate Detection)
         const newRecords = await db.select().from(imdbRecords).where(and(eq(imdbRecords.jobId, jobId), eq(imdbRecords.organisationId, orgId)));
+        
+        const newBarcodes = [...new Set(newRecords.map((r: any) => normalizeField("BARCODE", r.BARCODE)).filter(Boolean))] as string[];
+        const barcodeMatches = newBarcodes.length
+            ? await db.select().from(imdbRecords).where(and(
+                eq(imdbRecords.organisationId, orgId),
+                eq(imdbRecords.status, "ACTIVE"),
+                ne(imdbRecords.jobId, jobId),
+                inArray(imdbRecords.BARCODE, newBarcodes),
+            ))
+            : [];
+            
+        const barcodeMatchMap = new Map<string, typeof barcodeMatches>();
+        for (const match of barcodeMatches) {
+            const bc = normalizeField("BARCODE", match.BARCODE);
+            if (!barcodeMatchMap.has(bc)) barcodeMatchMap.set(bc, []);
+            barcodeMatchMap.get(bc)!.push(match);
+        }
+
         const existingRecords = await db.select().from(imdbRecords).where(and(eq(imdbRecords.organisationId, orgId), eq(imdbRecords.status, "ACTIVE"), ne(imdbRecords.jobId, jobId)));
         
-        const dupInserts = [];
+        const dupInserts: any[] = [];
         for (const newRec of newRecords) {
-            for (const existing of existingRecords) {
-                const newBarcode = normalizeField("BARCODE", newRec.BARCODE);
-                const existingBarcode = normalizeField("BARCODE", existing.BARCODE);
+            const newBarcode = normalizeField("BARCODE", newRec.BARCODE);
+            const barcodeMatchedExistingIds = new Set<string>();
 
-                if (newBarcode && existingBarcode && newBarcode === existingBarcode) {
+            if (newBarcode && barcodeMatchMap.has(newBarcode)) {
+                for (const existing of barcodeMatchMap.get(newBarcode)!) {
+                    barcodeMatchedExistingIds.add(existing.id);
                     dupInserts.push({
                         id: crypto.randomUUID(),
                         orgId,
@@ -941,8 +991,11 @@ export async function processJob(
                         reason: "BARCODE_MATCH",
                         status: "PENDING",
                     });
-                    continue;
                 }
+            }
+
+            for (const existing of existingRecords) {
+                if (barcodeMatchedExistingIds.has(existing.id)) continue;
 
                 const newName = normalizeField("ITEM_NAME", newRec.ITEM_NAME).toLowerCase();
                 const existingName = normalizeField("ITEM_NAME", existing.ITEM_NAME).toLowerCase();
@@ -981,7 +1034,7 @@ export async function processJob(
         }
 
         if (dupInserts.length > 0) {
-            await db.transaction(async (tx) => {
+            await db.transaction(async (tx: any) => {
                 for (let i = 0; i < dupInserts.length; i += 50) {
                     await tx.insert(duplicatePairs).values(dupInserts.slice(i, i + 50));
                 }
@@ -991,6 +1044,8 @@ export async function processJob(
 
         await reporter.updateNodeState("deduplication", "completed");
         await reporter.updateEdgeState("e4", true, "#10b981");
+
+        await invalidateStats(orgId);
 
         await db.update(jobs).set({
             status: "COMPLETED",
