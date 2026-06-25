@@ -615,6 +615,8 @@ export function ImdbTable({
               className={cn("h-8 w-8 rounded-md transition-colors", viewMode === 'table' ? "bg-white dark:bg-neutral-800 shadow-sm text-indigo-600 dark:text-indigo-400" : "text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-800")}
               onClick={() => setViewMode('table')}
               title="List View"
+              aria-label="Table view"
+              aria-pressed={viewMode === 'table'}
             >
               <List className="size-4" />
             </Button>
@@ -624,6 +626,8 @@ export function ImdbTable({
               className={cn("h-8 w-8 rounded-md transition-colors", viewMode === 'grid' ? "bg-white dark:bg-neutral-800 shadow-sm text-indigo-600 dark:text-indigo-400" : "text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-800")}
               onClick={() => setViewMode('grid')}
               title="Grid View"
+              aria-label="Grid view"
+              aria-pressed={viewMode === 'grid'}
             >
               <LayoutGrid className="size-4" />
             </Button>
@@ -676,9 +680,9 @@ export function ImdbTable({
               const qty = rawExt.QUANTITY || rawExt.quantity || rawExt.Quantity || ''
 
               return (
-                <div 
-                  key={row.id} 
-                  className="group relative flex flex-col overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-sm transition-all hover:shadow-md hover:border-indigo-200 dark:hover:border-indigo-900/50 cursor-pointer"
+                <button
+                  key={row.id}
+                  className="group relative flex flex-col overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-sm transition-all hover:shadow-md hover:border-indigo-200 dark:hover:border-indigo-900/50 cursor-pointer text-left"
                   onClick={() => setSelectedRecordId(row.original.id)}
                 >
                   {/* Top Image Section */}
@@ -744,7 +748,7 @@ export function ImdbTable({
                       )}
                     </div>
                   </div>
-                </div>
+                </button>
               )
             })
           ) : (
