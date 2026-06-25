@@ -60,13 +60,24 @@ function ExportsContent({ orgId }: { orgId: string }) {
 
       const result = await response.json() as { success?: boolean; downloadUrl?: string }
       if (result.success && result.downloadUrl) {
+        // Fetch as Blob to handle cross-origin URLs
+        const fileResponse = await fetch(result.downloadUrl)
+        if (!fileResponse.ok) {
+          throw new Error('Failed to download file from server.')
+        }
+        const blob = await fileResponse.blob()
+        const objectUrl = URL.createObjectURL(blob)
+
         // Automatically trigger download
         const a = document.createElement('a')
-        a.href = result.downloadUrl
+        a.href = objectUrl
         a.download = `predictions_${jobId.substring(0, 8)}.xlsx`
         document.body.appendChild(a)
         a.click()
         document.body.removeChild(a)
+
+        // Clean up object URL
+        URL.revokeObjectURL(objectUrl)
       } else {
         throw new Error('Server did not return a valid download link.')
       }
@@ -153,13 +164,15 @@ function ExportsContent({ orgId }: { orgId: string }) {
                     #{job.id.substring(0, 8)}
                   </TableCell>
                   <TableCell className="text-neutral-500 dark:text-neutral-400">
-                    {new Date(job.completedAt || '').toLocaleDateString(undefined, { 
-                      year: 'numeric', 
-                      month: 'short', 
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
+                    {job.completedAt
+                      ? new Date(job.completedAt).toLocaleDateString(undefined, {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })
+                      : '—'}
                   </TableCell>
                   <TableCell className="text-center font-medium text-neutral-600 dark:text-neutral-400">
                     {job.imageCount}
