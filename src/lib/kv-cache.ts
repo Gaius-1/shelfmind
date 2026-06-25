@@ -4,6 +4,7 @@ import type { StatsPayload } from "../routes/api/stats.ts";
 
 export const EXTRACTION_TTL = 7 * 24 * 60 * 60; // 7 days
 export const STATS_TTL = 60; // 60 seconds
+export const CACHE_VERSION = "v1"; // Increment to invalidate all cached extractions
 
 function getCache(): any {
   return getBinding("CACHE");
@@ -18,7 +19,7 @@ export async function getCachedExtraction(orgId: string, imageHash: string): Pro
   const cache = getCache();
   if (!cache) return null;
   try {
-    const raw = await cache.get(`ai:${orgId}:${imageHash}`);
+    const raw = await cache.get(`ai:${CACHE_VERSION}:${orgId}:${imageHash}`);
     return raw ? (JSON.parse(raw) as IMDBProduct) : null;
   } catch (e) {
     console.error("[KV Cache] getCachedExtraction failed:", e);
@@ -30,7 +31,7 @@ export async function putCachedExtraction(orgId: string, imageHash: string, prod
   const cache = getCache();
   if (!cache) return;
   try {
-    await cache.put(`ai:${orgId}:${imageHash}`, JSON.stringify(product), {
+    await cache.put(`ai:${CACHE_VERSION}:${orgId}:${imageHash}`, JSON.stringify(product), {
       expirationTtl: EXTRACTION_TTL,
     });
   } catch (e) {

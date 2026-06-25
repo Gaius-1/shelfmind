@@ -88,6 +88,7 @@ function ExportsContent({ orgId }: { orgId: string }) {
   if (isPending) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
+        <span className="sr-only" role="status">Loading export batches...</span>
         <Spinner size="md" className="text-indigo-500" />
       </div>
     )
@@ -124,7 +125,7 @@ function ExportsContent({ orgId }: { orgId: string }) {
           <form onSubmit={handleExport} className="w-full flex flex-col gap-6">
             
             <div className="flex flex-col gap-2">
-              <Label className="text-xs font-semibold text-neutral-600 dark:text-neutral-400">
+              <Label htmlFor="batch-select" className="text-xs font-semibold text-neutral-600 dark:text-neutral-400">
                 Select Ingestion Batch
               </Label>
               <Select value={selectedJobId} onValueChange={(val) => {
@@ -132,7 +133,7 @@ function ExportsContent({ orgId }: { orgId: string }) {
                 setDownloadUrl(null)
                 setError(null)
               }}>
-                <SelectTrigger className="w-full h-11 bg-white dark:bg-neutral-900">
+                <SelectTrigger id="batch-select" className="w-full h-11 bg-white dark:bg-neutral-900">
                   <SelectValue placeholder="Select a batch..." />
                 </SelectTrigger>
                 <SelectContent>
