@@ -131,60 +131,62 @@ function ExportsContent({ orgId }: { orgId: string }) {
             </p>
           </div>
         ) : (
-          <Table>
-            <TableHeader className="bg-neutral-50/50 dark:bg-neutral-900/50">
-              <TableRow>
-                <TableHead className="w-[120px] font-bold">Batch ID</TableHead>
-                <TableHead className="font-bold">Date Processed</TableHead>
-                <TableHead className="font-bold text-center">Items</TableHead>
-                <TableHead className="text-right font-bold">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {completedJobs.map((job) => (
-                <TableRow key={job.id} className="group">
-                  <TableCell className="font-medium text-neutral-700 dark:text-neutral-300">
-                    #{job.id.substring(0, 8)}
-                  </TableCell>
-                  <TableCell className="text-neutral-500 dark:text-neutral-400">
-                    {job.completedAt
-                      ? new Date(job.completedAt).toLocaleDateString(undefined, {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })
-                      : '—'}
-                  </TableCell>
-                  <TableCell className="text-center font-medium text-neutral-600 dark:text-neutral-400">
-                    {job.imageCount}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      size="sm"
-                      disabled={exportingJobId === job.id}
-                      onClick={() => handleGenerateAndDownload(job.id)}
-                      aria-label={exportingJobId === job.id ? "Generating export" : "Download export"}
-                      className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 dark:text-indigo-400 font-bold transition-colors h-8 shrink-0"
-                    >
-                      {exportingJobId === job.id ? (
-                        <>
-                          <Spinner size="sm" className="sm:mr-2" />
-                          <span className="hidden sm:inline">Generating...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Download className="size-4 sm:size-3.5 sm:mr-1.5" />
-                          <span className="hidden sm:inline">Download Excel</span>
-                        </>
-                      )}
-                    </Button>
-                  </TableCell>
+          <div className="overflow-x-auto w-full">
+            <Table className="min-w-[600px]">
+              <TableHeader className="bg-neutral-50/50 dark:bg-neutral-900/50">
+                <TableRow>
+                  <TableHead className="w-[120px] font-bold">Batch ID</TableHead>
+                  <TableHead className="font-bold">Date Processed</TableHead>
+                  <TableHead className="font-bold text-center">Items</TableHead>
+                  <TableHead className="text-right font-bold">Action</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {completedJobs.map((job) => (
+                  <TableRow key={job.id} className="group">
+                    <TableCell className="font-medium text-neutral-700 dark:text-neutral-300">
+                      #{job.id.substring(0, 8)}
+                    </TableCell>
+                    <TableCell className="text-neutral-500 dark:text-neutral-400">
+                      {job.completedAt
+                        ? new Date(job.completedAt).toLocaleDateString(undefined, {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })
+                        : '—'}
+                    </TableCell>
+                    <TableCell className="text-center font-medium text-neutral-600 dark:text-neutral-400">
+                      {job.imageCount}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        disabled={exportingJobId === job.id}
+                        onClick={() => handleGenerateAndDownload(job.id)}
+                        aria-label={exportingJobId === job.id ? "Generating export" : "Download export"}
+                        className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 dark:text-indigo-400 font-bold transition-colors h-8 shrink-0 whitespace-nowrap"
+                      >
+                        {exportingJobId === job.id ? (
+                          <>
+                            <Spinner size="sm" className="sm:mr-2" />
+                            <span className="hidden sm:inline">Generating...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Download className="size-4 sm:size-3.5 sm:mr-1.5" />
+                            <span className="hidden sm:inline">Download Excel</span>
+                          </>
+                        )}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </div>
 
