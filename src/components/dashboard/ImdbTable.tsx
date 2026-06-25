@@ -666,7 +666,7 @@ export function ImdbTable({
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={tableColumns.length} className="h-24 text-center">
+                <TableCell colSpan={table.getVisibleLeafColumns().length} className="h-24 text-center">
                   No results.
                 </TableCell>
               </TableRow>
@@ -678,7 +678,7 @@ export function ImdbTable({
       {/* Pagination Footer */}
       <div className="flex flex-col sm:flex-row items-center justify-between px-2 gap-4">
         <div className="flex-1 text-xs text-neutral-500">
-          Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1} to {Math.min((table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize, isServerSidePagination ? (totalRecords || 0) : table.getFilteredRowModel().rows.length)} of {isServerSidePagination ? (totalRecords || 0) : table.getFilteredRowModel().rows.length} entries
+          Showing {(isServerSidePagination ? (totalRecords || 0) : table.getFilteredRowModel().rows.length) === 0 ? 0 : table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1} to {Math.min((table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize, isServerSidePagination ? (totalRecords || 0) : table.getFilteredRowModel().rows.length)} of {isServerSidePagination ? (totalRecords || 0) : table.getFilteredRowModel().rows.length} entries
         </div>
         <div className="flex items-center space-x-6 lg:space-x-8">
           <div className="flex items-center space-x-2">
