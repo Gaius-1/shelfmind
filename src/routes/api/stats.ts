@@ -4,6 +4,22 @@ import { jobs, imdbRecords, duplicatePairs } from '#/db/schema.ts'
 import * as schema from '#/db/schema.ts'
 import { eq, and, count, avg, sql } from 'drizzle-orm'
 
+export interface StatsPayload {
+  success: boolean;
+  stats: {
+    totalProducts: number;
+    meanConfidence: number;
+    flaggedCount: number;
+    totalJobs: number;
+    pendingDuplicates: number;
+  };
+  daily: {
+    products: { time: string; value: number }[];
+    confidence: { time: string; value: number }[];
+    flagged: { time: string; value: number }[];
+  };
+}
+
 const routeOptions: any = {
   server: {
     handlers: {
@@ -32,6 +48,15 @@ const routeOptions: any = {
           if (!orgId) {
             return new Response(JSON.stringify({ error: 'No active organization found' }), {
               status: 400,
+              headers: { 'Content-Type': 'application/json' }
+            })
+          }
+
+          const { getCachedStats, putCachedStats } = await import('#/lib/kv-cache.ts')
+          const cached = await getCachedStats(orgId)
+          if (cached) {
+            return new Response(JSON.stringify(cached), {
+              status: 200,
               headers: { 'Content-Type': 'application/json' }
             })
           }
@@ -124,7 +149,7 @@ const routeOptions: any = {
             dailyFlagged.push({ time: label, value: row?.flagged_cnt ?? 0 })
           }
 
-          return new Response(JSON.stringify({
+          const payload: StatsPayload = {
             success: true,
             stats: {
               totalProducts: productStats[0]?.totalProducts ?? 0,
@@ -138,7 +163,11 @@ const routeOptions: any = {
               confidence: dailyConfidence,
               flagged: dailyFlagged,
             }
-          }), {
+          }
+
+          await putCachedStats(orgId, payload)
+
+          return new Response(JSON.stringify(payload), {
             status: 200,
             headers: { 'Content-Type': 'application/json' }
           })

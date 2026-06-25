@@ -1,0 +1,2 @@
+CREATE INDEX `idx_imdb_org_status` ON `imdb_records` (`organisation_id`,`status`);--> statement-breakpoint
+CREATE INDEX `idx_imdb_org_status_created` ON `imdb_records` (`organisation_id`,`status`,`created_at`);
