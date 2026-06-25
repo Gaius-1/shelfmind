@@ -63,7 +63,7 @@ function ReviewQueueContent({ orgId, jobId }: ContentProps) {
   }, [searchInput])
 
   useEffect(() => {
-    setPagination(prev => ({ ...prev, pageIndex: 0 }))
+    setPagination({ pageIndex: 0, pageSize: 25 })
   }, [jobId])
 
   // Fetch jobs for the dropdown selection filter
