@@ -940,14 +940,11 @@ export async function processJob(
         }
 
         if (recordsToInsert.length > 0) {
-            const CHUNK = 20;
-            const chunks: any[] = [];
-            for (let i = 0; i < recordsToInsert.length; i += CHUNK) chunks.push(recordsToInsert.slice(i, i + CHUNK));
-            await db.transaction(async (tx: any) => {
-                await Promise.all(chunks.map(c => tx.insert(imdbRecords).values(c)));
-            });
+            for (let i = 0; i < recordsToInsert.length; i += 4) {
+                await db.insert(imdbRecords).values(recordsToInsert.slice(i, i + 4));
+            }
+            await reporter.addLog("database", `Inserted ${recordsToInsert.length} distinct records to DB`, "success");
         }
-
         await reporter.updateNodeState("database", "completed");
         await reporter.updateEdgeState("e3", true, "#10b981");
         await reporter.updateNodeState("deduplication", "active");
@@ -1034,11 +1031,9 @@ export async function processJob(
         }
 
         if (dupInserts.length > 0) {
-            await db.transaction(async (tx: any) => {
-                for (let i = 0; i < dupInserts.length; i += 50) {
-                    await tx.insert(duplicatePairs).values(dupInserts.slice(i, i + 50));
-                }
-            });
+            for (let i = 0; i < dupInserts.length; i += 10) {
+                await db.insert(duplicatePairs).values(dupInserts.slice(i, i + 10));
+            }
             await reporter.addLog("deduplication", `Found ${dupInserts.length} potential duplicate pairs`, "warning");
         }
 
