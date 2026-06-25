@@ -4,8 +4,6 @@ import { authClient } from '#/lib/auth-client.ts'
 import { useJobs } from '#/hooks/useJobs.ts'
 import { Spinner } from '#/components/spinner.tsx'
 import { Button } from '#/components/ui/button.tsx'
-import { Checkbox } from '#/components/ui/checkbox.tsx'
-import { Label } from '#/components/ui/label.tsx'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table.tsx'
 import { Download, AlertCircle, FileSpreadsheet } from 'lucide-react'
 import { MicrosoftExcel } from '#/components/ui/svgs/microsoftExcel.tsx'
@@ -38,7 +36,6 @@ function ExportsContent({ orgId }: { orgId: string }) {
   const { data: jobsData, isPending } = useJobs(orgId)
   const completedJobs = (jobsData?.jobs || []).filter((j) => j.status === 'COMPLETED')
 
-  const [includeMetadata, setIncludeMetadata] = useState(false)
   const [exportingJobId, setExportingJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -50,7 +47,7 @@ function ExportsContent({ orgId }: { orgId: string }) {
       const response = await fetch(`/api/jobs/${jobId}/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ includeMetadata }),
+        body: JSON.stringify({ includeMetadata: false }),
       })
 
       if (!response.ok) {
@@ -102,31 +99,17 @@ function ExportsContent({ orgId }: { orgId: string }) {
     <div className="flex flex-col min-h-[calc(100vh-10rem)] p-6 md:p-8 max-w-5xl mx-auto w-full gap-8">
       
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 border-b border-neutral-200 dark:border-neutral-800 pb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-200 dark:border-neutral-800 pb-6">
         <div className="flex items-center gap-4">
-          <div className="flex items-center justify-center size-12 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/30">
-            <MicrosoftExcel className="size-6" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 font-heading tracking-tight">
+          <MicrosoftExcel className="size-10 sm:size-12 shrink-0 drop-shadow-sm" />
+          <div className="flex flex-col">
+            <h1 className="text-xl sm:text-2xl font-bold text-neutral-900 dark:text-neutral-100 font-heading tracking-tight">
               Export Center
             </h1>
-            <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400 mt-0.5">
+            <p className="text-xs sm:text-sm font-medium text-neutral-500 dark:text-neutral-400 mt-0.5 leading-snug">
               Generate structured Excel spreadsheets for your processed batches.
             </p>
           </div>
-        </div>
-        
-        {/* Global Configuration */}
-        <div className="flex items-center gap-3 px-4 py-2.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-xs">
-          <Checkbox 
-            id="meta" 
-            checked={includeMetadata} 
-            onCheckedChange={(checked) => setIncludeMetadata(checked === true)}
-          />
-          <Label htmlFor="meta" className="text-sm font-semibold cursor-pointer text-neutral-700 dark:text-neutral-300">
-            Include Confidence Metadata
-          </Label>
         </div>
       </div>
 
@@ -182,17 +165,18 @@ function ExportsContent({ orgId }: { orgId: string }) {
                       size="sm"
                       disabled={exportingJobId === job.id}
                       onClick={() => handleGenerateAndDownload(job.id)}
-                      className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 dark:text-indigo-400 font-bold transition-colors h-8"
+                      aria-label={exportingJobId === job.id ? "Generating export" : "Download export"}
+                      className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 dark:text-indigo-400 font-bold transition-colors h-8 shrink-0"
                     >
                       {exportingJobId === job.id ? (
                         <>
-                          <Spinner size="sm" className="mr-2" />
-                          Generating...
+                          <Spinner size="sm" className="sm:mr-2" />
+                          <span className="hidden sm:inline">Generating...</span>
                         </>
                       ) : (
                         <>
-                          <Download className="size-3.5 mr-1.5" />
-                          Download Excel
+                          <Download className="size-4 sm:size-3.5 sm:mr-1.5" />
+                          <span className="hidden sm:inline">Download Excel</span>
                         </>
                       )}
                     </Button>
