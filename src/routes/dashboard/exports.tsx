@@ -82,6 +82,7 @@ function ExportsContent({ orgId }: { orgId: string }) {
   if (isPending) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
+        <span className="sr-only" role="status">Loading export batches...</span>
         <Spinner size="md" className="text-indigo-500" />
       </div>
     )
