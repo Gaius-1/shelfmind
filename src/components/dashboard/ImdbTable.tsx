@@ -25,6 +25,10 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  LayoutGrid,
+  List,
+  ImageIcon,
+  Barcode,
 } from 'lucide-react'
 import { cn } from '#/lib/utils.ts'
 
@@ -334,6 +338,7 @@ export function ImdbTable({
   const [internalSorting, setInternalSorting] = useState<SortingState>([])
   const [internalGlobalFilter, setInternalGlobalFilter] = useState('')
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('grid')
   const [internalPagination, setInternalPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 25,
@@ -603,6 +608,30 @@ export function ImdbTable({
         </div>
         
         <div className="flex items-center gap-2">
+          <div className="flex items-center bg-neutral-100 dark:bg-neutral-900/50 rounded-lg p-1 border border-neutral-200 dark:border-neutral-800">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={cn("h-8 w-8 rounded-md transition-colors", viewMode === 'table' ? "bg-white dark:bg-neutral-800 shadow-sm text-indigo-600 dark:text-indigo-400" : "text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-800")}
+              onClick={() => setViewMode('table')}
+              title="List View"
+              aria-label="Table view"
+              aria-pressed={viewMode === 'table'}
+            >
+              <List className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={cn("h-8 w-8 rounded-md transition-colors", viewMode === 'grid' ? "bg-white dark:bg-neutral-800 shadow-sm text-indigo-600 dark:text-indigo-400" : "text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-800")}
+              onClick={() => setViewMode('grid')}
+              title="Grid View"
+              aria-label="Grid view"
+              aria-pressed={viewMode === 'grid'}
+            >
+              <LayoutGrid className="size-4" />
+            </Button>
+          </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="h-10 rounded-xl shadow-xs">
@@ -630,50 +659,150 @@ export function ImdbTable({
         </div>
       </div>
 
-      <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-x-auto">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead key={header.id} style={{ width: header.getSize() }} className={cn(header.column.columnDef.meta?.headerClassName as string)}>
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
-                    </TableHead>
-                  )
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
+      {viewMode === 'grid' ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+          {table.getRowModel().rows?.length ? (
+            table.getRowModel().rows.map((row) => {
+              const recordJobId = row.original.jobId || jobId
+              const rawImages = row.original.rawExtraction?.images || []
+              const images = rawImages.filter((v: any, i: number, a: any) => a.findIndex((t: any) => t.fileName === v.fileName) === i)
+              const firstImage = images[0]
+
+              // Get extracted values
+              const fieldMeta = row.original.fieldMetadata || {}
+              const conf = fieldMeta.confidenceScore ?? 0
+              const flagged = fieldMeta.isFlagged ?? false
+              
+              const rawExt = row.original.rawExtraction || {}
+              const itemName = rawExt.ITEM_NAME || rawExt.item_name || rawExt.Item_Name || 'Unknown Product'
+              const brand = rawExt.BRAND || rawExt.brand || rawExt.Brand || ''
+              const barcode = rawExt.BARCODE || rawExt.barcode || rawExt.Barcode || ''
+              const qty = rawExt.QUANTITY || rawExt.quantity || rawExt.Quantity || ''
+
+              return (
+                <button
                   key={row.id}
-                  data-state={row.getIsSelected() && "selected"}
+                  className="group relative flex flex-col overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-sm transition-all hover:shadow-md hover:border-indigo-200 dark:hover:border-indigo-900/50 cursor-pointer text-left"
+                  onClick={() => setSelectedRecordId(row.original.id)}
                 >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className={cn("py-1", cell.column.columnDef.meta?.cellClassName as string)}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
+                  {/* Top Image Section */}
+                  <div className="relative aspect-[4/3] w-full bg-white dark:bg-neutral-900 border-b border-neutral-100 dark:border-neutral-800 overflow-hidden flex items-center justify-center p-2">
+                    {firstImage ? (
+                      <img 
+                        src={getImageUrl(firstImage.fileName, firstImage.jobId || recordJobId)} 
+                        alt={itemName}
+                        className="object-contain w-full h-full mix-blend-multiply dark:mix-blend-normal transition-transform duration-300 group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-neutral-400">
+                        <ImageIcon className="size-8 mb-2 opacity-30" />
+                        <span className="text-[10px] font-medium uppercase tracking-wider">No Image</span>
+                      </div>
+                    )}
+                    
+                    {/* Badges Overlay */}
+                    <div className="absolute top-2 left-2 flex flex-col gap-1.5 items-start pointer-events-none">
+                      {flagged && (
+                        <Badge variant="destructive" className="h-5 px-1.5 text-[9px] shadow-sm flex items-center gap-1 rounded-sm">
+                          <AlertCircle className="size-2.5" /> Flagged
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="absolute top-2 right-2 pointer-events-none">
+                      <div className={cn(
+                        "flex items-center justify-center h-5 min-w-[28px] px-1.5 rounded-md text-[10px] font-bold shadow-sm backdrop-blur-md",
+                        conf >= 0.9 ? "bg-emerald-500/90 text-white" :
+                        conf >= 0.7 ? "bg-amber-500/90 text-white" :
+                        "bg-rose-500/90 text-white"
+                      )}>
+                        {Math.round(conf * 100)}%
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Content Section */}
+                  <div className="flex flex-col flex-1 p-3">
+                    {brand && (
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-0.5 line-clamp-1">
+                        {brand}
+                      </span>
+                    )}
+                    <h3 className="text-xs sm:text-sm font-semibold text-neutral-900 dark:text-neutral-100 leading-tight line-clamp-2 mb-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                      {itemName}
+                    </h3>
+                    
+                    <div className="mt-auto pt-2 border-t border-neutral-100 dark:border-neutral-800/50 flex items-center justify-between">
+                      {barcode ? (
+                        <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
+                          <Barcode className="size-3.5 shrink-0" />
+                          <span className="font-mono text-[10px] truncate max-w-[100px]">{barcode}</span>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-neutral-400 italic">No Barcode</span>
+                      )}
+                      
+                      {qty && (
+                        <span className="text-[10px] font-medium bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded text-neutral-600 dark:text-neutral-300">
+                          Qty: {qty}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              )
+            })
+          ) : (
+            <div className="col-span-full h-48 flex items-center justify-center text-sm text-neutral-500 bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-md">
+              No results found.
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-x-auto">
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    return (
+                      <TableHead key={header.id} style={{ width: header.getSize() }} className={cn(header.column.columnDef.meta?.headerClassName as string)}>
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                      </TableHead>
+                    )
+                  })}
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={table.getVisibleLeafColumns().length} className="h-24 text-center">
-                  No results.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows?.length ? (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && "selected"}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className={cn("py-1", cell.column.columnDef.meta?.cellClassName as string)}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={table.getVisibleLeafColumns().length} className="h-24 text-center">
+                    No results.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       {/* Pagination Footer */}
       <div className="flex flex-col sm:flex-row items-center justify-between px-2 gap-4">
