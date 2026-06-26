@@ -5,7 +5,7 @@ import pLimit from "p-limit";
 import type { IMDBProduct } from "../types/imdb.ts";
 import { FIELD_WEIGHTS, FIELD_EMPTY_THRESHOLD } from "../types/imdb.ts";
 import { getUpload } from "./storage.ts";
-import { groupAndMergeImages, isSafeSubstringMatch } from "./grouping.ts";
+import { groupAndMergeImages, isSafeSubstringMatch, crossBatchProductsMatch } from "./grouping.ts";
 import { normalizeBarcode, normalizeWeight, normalizePackaging, normalizeCountry, normalizeField, normalizeManufacturer, normalizeBrand } from "./normalization.ts";
 import { validateBarcode } from "./barcode.ts";
 import { decodeBarcodeFromImage } from "./zxing.ts";
@@ -995,15 +995,38 @@ export async function processJob(
         }
 
         const existingRecords = await db.select().from(imdbRecords).where(and(eq(imdbRecords.organisationId, orgId), eq(imdbRecords.status, "ACTIVE"), ne(imdbRecords.jobId, jobId)));
-        
+
+        // Reconstruct a minimal IMDBProduct from a stored record so the cross-batch
+        // grouping matcher can reuse the same identity logic as within-batch grouping.
+        // productGroupKey holds the watermark imageTag (it falls back to BARCODE on
+        // insert, so drop it when it merely echoes the barcode to avoid a fake audit ID).
+        const toProduct = (r: typeof newRecords[number]): IMDBProduct => {
+            const groupKey = r.productGroupKey || "";
+            const imageTag = groupKey && groupKey !== normalizeField("BARCODE", r.BARCODE) ? groupKey : "";
+            return {
+                ITEM_NAME: r.ITEM_NAME || "", BARCODE: r.BARCODE || "", MANUFACTURER: r.MANUFACTURER || "",
+                BRAND: r.BRAND || "", WEIGHT: r.WEIGHT || "", PACKAGING_TYPE: r.PACKAGING_TYPE || "",
+                COUNTRY: r.COUNTRY || "", VARIANT: r.VARIANT || "", TYPE: r.TYPE || "",
+                FRAGRANCE_FLAVOR: r.FRAGRANCE_FLAVOR || "", PROMOTION: r.PROMOTION || "",
+                ADDONS: r.ADDONS || "", TAGLINE: r.TAGLINE || "",
+                imageTag, sourceImages: [],
+            };
+        };
+        const existingProducts = existingRecords.map((r: typeof newRecords[number]) => ({ id: r.id, product: toProduct(r) }));
+
         const dupInserts: any[] = [];
         for (const newRec of newRecords) {
             const newBarcode = normalizeField("BARCODE", newRec.BARCODE);
             const barcodeMatchedExistingIds = new Set<string>();
+            // Track every existing record already paired with this new record so a
+            // single pair is never inserted twice under two different reasons.
+            const pairedExistingIds = new Set<string>();
+            const newProduct = toProduct(newRec);
 
             if (newBarcode && barcodeMatchMap.has(newBarcode)) {
                 for (const existing of barcodeMatchMap.get(newBarcode)!) {
                     barcodeMatchedExistingIds.add(existing.id);
+                    pairedExistingIds.add(existing.id);
                     dupInserts.push({
                         id: crypto.randomUUID(),
                         orgId,
@@ -1025,6 +1048,7 @@ export async function processJob(
                 const existingBrand = normalizeField("BRAND", existing.BRAND);
 
                 if (newName && existingName && isSafeSubstringMatch(newName, existingName, newBrand.toLowerCase(), existingBrand.toLowerCase())) {
+                    pairedExistingIds.add(existing.id);
                     dupInserts.push({
                         id: crypto.randomUUID(),
                         orgId,
@@ -1042,6 +1066,7 @@ export async function processJob(
                     if (newRec.FRAGRANCE_FLAVOR && existing.FRAGRANCE_FLAVOR && newRec.FRAGRANCE_FLAVOR.toLowerCase() !== existing.FRAGRANCE_FLAVOR.toLowerCase()) {
                         continue;
                     }
+                    pairedExistingIds.add(existing.id);
                     dupInserts.push({
                         id: crypto.randomUUID(),
                         orgId,
@@ -1049,6 +1074,26 @@ export async function processJob(
                         recordBId: existing.id,
                         similarityScore: 0.85,
                         reason: "BRAND_WEIGHT_MATCH",
+                        status: "PENDING",
+                    });
+                }
+            }
+
+            // Cross-batch unification: catch the same product photographed in an
+            // earlier batch using the full grouping matcher (watermark audit ID /
+            // fuzzy barcode), which the shallow checks above miss when the AI-read
+            // name/brand are noisy. Gated on a strong identity signal.
+            for (const { id: existingId, product: existingProduct } of existingProducts) {
+                if (pairedExistingIds.has(existingId)) continue;
+                if (crossBatchProductsMatch(newProduct, existingProduct)) {
+                    pairedExistingIds.add(existingId);
+                    dupInserts.push({
+                        id: crypto.randomUUID(),
+                        orgId,
+                        recordAId: newRec.id,
+                        recordBId: existingId,
+                        similarityScore: 0.95,
+                        reason: "CROSS_BATCH_MATCH",
                         status: "PENDING",
                     });
                 }
