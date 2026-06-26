@@ -18,6 +18,7 @@ import {
 import { QwenDark } from '#/components/ui/svgs/qwenDark.tsx'
 import { QwenLight } from '#/components/ui/svgs/qwenLight.tsx'
 import { cn } from '#/lib/utils.ts'
+import { validateBarcode } from '#/lib/barcode.ts'
 
 interface RecordDetailProps {
   record: any
@@ -223,14 +224,23 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
                   <div className="flex flex-col gap-2">
                     <p className="text-muted-foreground">Barcode Detector: ZXing (deterministic WASM)</p>
                     <p>
-                      Detected: {currentImage?.zxing?.barcode ? (
+                      Detected: {currentImage?.zxing?.text ? (
                         <span className="font-bold">
-                          {currentImage.zxing.barcode}
+                          {currentImage.zxing.text}
+                          {currentImage.zxing.format ? ` (${currentImage.zxing.format})` : ''}
                         </span>
                       ) : (
                         <span className="text-muted-foreground italic">None</span>
                       )}
                     </p>
+                    {currentImage?.zxing?.text && (
+                      <p>
+                        Check digit:{' '}
+                        <span className={currentImage.zxing.valid ? 'text-emerald-600 font-medium' : 'text-destructive font-medium'}>
+                          {currentImage.zxing.valid ? 'Valid' : 'Invalid'}
+                        </span>
+                      </p>
+                    )}
                   </div>
                 )}
                 {evidenceTab === 'watermark' && (
@@ -282,12 +292,32 @@ export function RecordDetail({ record, orgId, jobId }: RecordDetailProps) {
                       </div>
 
                       {/* Field Value Input */}
-                      <div className="sm:col-span-8">
+                      <div className="sm:col-span-8 flex flex-col gap-1.5">
                         <Input
                           value={formFields[colName]}
                           onChange={(e) => handleFieldChange(colName, e.target.value)}
                           placeholder={`Enter ${EXCEL_HEADERS[colName].toLowerCase()}...`}
                         />
+                        {colName === 'BARCODE' && formFields[colName] && (() => {
+                          const v = validateBarcode(formFields[colName])
+                          return (
+                            <div className="flex items-center gap-2 text-xs">
+                              <span
+                                className={cn(
+                                  'px-2 py-0.5 rounded-md font-medium',
+                                  v.valid
+                                    ? 'bg-emerald-500/10 text-emerald-600'
+                                    : 'bg-destructive/10 text-destructive',
+                                )}
+                              >
+                                {v.valid ? 'Valid' : 'Invalid'}
+                              </span>
+                              <span className="text-muted-foreground">
+                                {v.format ? v.format.replace('_', '-') : 'Unknown format'} — {v.message}
+                              </span>
+                            </div>
+                          )
+                        })()}
                       </div>
                     </div>
                   )

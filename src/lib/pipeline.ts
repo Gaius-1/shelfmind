@@ -6,7 +6,9 @@ import type { IMDBProduct } from "../types/imdb.ts";
 import { FIELD_WEIGHTS, FIELD_EMPTY_THRESHOLD } from "../types/imdb.ts";
 import { getUpload } from "./storage.ts";
 import { groupAndMergeImages, isSafeSubstringMatch } from "./grouping.ts";
-import { normalizeBarcode, normalizeWeight, normalizePackaging, normalizeCountry, normalizeField, normalizeManufacturer, normalizeBrand, isValidEAN13 } from "./normalization.ts";
+import { normalizeBarcode, normalizeWeight, normalizePackaging, normalizeCountry, normalizeField, normalizeManufacturer, normalizeBrand } from "./normalization.ts";
+import { validateBarcode } from "./barcode.ts";
+import { decodeBarcodeFromImage } from "./zxing.ts";
 import { parseWatermark } from "./watermark-parser.ts";
 import { hashImage, getCachedExtraction, putCachedExtraction, invalidateStats } from "./kv-cache.ts";
 
@@ -549,6 +551,7 @@ export async function processJob(
                     for (const k of Object.keys(product.rawVisionData)) {
                         if (k.endsWith("_ocr")) newRawVisionData[`${fileName}_ocr`] = product.rawVisionData[k];
                         else if (k.endsWith("_watermark")) newRawVisionData[`${fileName}_watermark`] = product.rawVisionData[k];
+                        else if (k.endsWith("_zxing")) newRawVisionData[`${fileName}_zxing`] = product.rawVisionData[k];
                         else newRawVisionData[fileName] = product.rawVisionData[k];
                     }
                     product.rawVisionData = newRawVisionData;
@@ -811,6 +814,22 @@ export async function processJob(
                         : `[${fileName}] Raw text extracted via Google Vision`;
                     await reporter.addLog("ocr", successMessage, "success");
                 }
+
+                // Step 2.5: Real barcode decode (ZXing). Runs on the original buffer so
+                // the printed barcode is intact. A validated decode is authoritative and
+                // overrides the vision-extracted barcode.
+                const zxingResult = await decodeBarcodeFromImage(buffer);
+                if (zxingResult) {
+                    if (!extracted.rawVisionData) extracted.rawVisionData = {};
+                    extracted.rawVisionData[`${fileName}_zxing`] = zxingResult;
+                    if (zxingResult.valid) {
+                        extracted.BARCODE = zxingResult.text;
+                        await reporter.addLog("structured", `[${fileName}] Barcode scanned via ZXing: ${zxingResult.text} (${zxingResult.format})`, "success");
+                    } else {
+                        await reporter.addLog("structured", `[${fileName}] ZXing read ${zxingResult.text} (${zxingResult.format}) — failed check digit`, "info");
+                    }
+                }
+
                 rawExtractions.push(extracted);
                 await putCachedExtraction(orgId, imageHash, extracted);
                 await reporter.addLog("structured", `[${fileName}] Data extracted successfully by Qwen3-VL${extracted.imageSide ? ` (${extracted.imageSide} side)` : ""}`, "success");
@@ -897,11 +916,14 @@ export async function processJob(
             if (isMissingCritical) {
                 confidence = Math.min(confidence, 0.70);
             }
-            if (product.BARCODE) {
-                const cleanedBarcode = normalizeBarcode(product.BARCODE);
-                if (cleanedBarcode.length === 13 && !isValidEAN13(cleanedBarcode)) {
-                    confidence = Math.min(confidence, 0.70);
-                }
+            // Multi-format barcode validation (EAN-13/8, UPC-A/E, ITF-14). A present
+            // but invalid barcode caps confidence; a ZXing-scanned valid barcode is trusted.
+            const barcodeValidation = product.BARCODE ? validateBarcode(product.BARCODE) : null;
+            const zxingDecode = product.sourceImages
+                .map(f => product.rawVisionData?.[`${f}_zxing`])
+                .find(z => z?.valid);
+            if (barcodeValidation && barcodeValidation.normalized && !barcodeValidation.valid && !zxingDecode) {
+                confidence = Math.min(confidence, 0.70);
             }
             
             const flagged = confidence < 0.75;
@@ -926,10 +948,13 @@ export async function processJob(
                 confidence,
                 flagged,
                 rawExtraction: { 
+                    barcodeValidation: barcodeValidation
+                        ? { format: barcodeValidation.format, valid: barcodeValidation.valid, message: barcodeValidation.message, scannedByZxing: !!zxingDecode }
+                        : null,
                     images: product.sourceImages.map(f => ({ 
                         fileName: f, 
                         ocr: product.rawVisionData ? product.rawVisionData[`${f}_ocr`] || null : null, 
-                        zxing: null, 
+                        zxing: product.rawVisionData ? product.rawVisionData[`${f}_zxing`] || null : null, 
                         vision: product.rawVisionData ? product.rawVisionData[f] : null,
                         watermark: product.rawVisionData ? product.rawVisionData[`${f}_watermark`] || null : null
                     })) 

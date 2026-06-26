@@ -1,4 +1,8 @@
 import type { ImdbColumnName } from "../types/imdb.ts";
+import { isValidEAN13 as isValidEAN13Impl } from "./barcode.ts";
+
+// Re-exported so existing call sites keep importing barcode helpers from here.
+export { validateBarcode, isValidGtin } from "./barcode.ts";
 
 /**
  * Standardizes weight strings (e.g., "500 g" -> "500g", "0.5 kg" -> "500g").
@@ -23,19 +27,11 @@ export function normalizeBarcode(rawBarcode: string): string {
 }
 
 /**
- * Validates an EAN-13 barcode using the Luhn check digit algorithm.
+ * Validates an EAN-13 barcode using the GTIN modulo-10 check-digit algorithm.
+ * Delegates to the shared multi-format validator in barcode.ts.
  */
 export function isValidEAN13(barcode: string): boolean {
-	if (!/^\d{13}$/.test(barcode)) return false;
-	
-	let sum = 0;
-	for (let i = 0; i < 12; i++) {
-		const digit = parseInt(barcode[i], 10);
-		sum += i % 2 === 0 ? digit : digit * 3;
-	}
-	
-	const checkDigit = (10 - (sum % 10)) % 10;
-	return checkDigit === parseInt(barcode[12], 10);
+	return isValidEAN13Impl(barcode);
 }
 
 const BRAND_PACKAGING_OVERRIDES: Record<string, { matches: string[], override: string }[]> = {
