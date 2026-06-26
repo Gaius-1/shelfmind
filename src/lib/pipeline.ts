@@ -787,6 +787,18 @@ export async function processJob(
                     }
                 }
 
+                // Universal Fallback: If ITEM_NAME is STILL missing (no watermark, or empty description),
+                // synthesize it dynamically from the extracted product components so it isn't "Unnamed Product".
+                if (!extracted.ITEM_NAME || extracted.ITEM_NAME.length < 3) {
+                    extracted.ITEM_NAME = [
+                        extracted.BRAND, 
+                        extracted.VARIANT, 
+                        extracted.TYPE, 
+                        extracted.WEIGHT, 
+                        extracted.PACKAGING_TYPE
+                    ].filter(Boolean).join(" ").trim().toUpperCase();
+                }
+
                 // Clear E-number hallucination in any text field (runs in both watermark and non-watermark paths)
                 clearENumberHallucinations(extracted, reporter, fileName);
 
