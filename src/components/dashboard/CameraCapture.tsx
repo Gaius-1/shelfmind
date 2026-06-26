@@ -46,7 +46,7 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
   const [capturedCount, setCapturedCount] = useState(0)
   const [liveBarcode, setLiveBarcode] = useState<LiveBarcode | null>(null)
   const [captureStep, setCaptureStep] = useState<CaptureStep>('front')
-  const [capturedFiles, setCapturedFiles] = useState<File[]>([])
+  const [, setCapturedFiles] = useState<File[]>([])
   const [isBlurry, setIsBlurry] = useState(false)
   const [isCapturing, setIsCapturing] = useState(false)
 
