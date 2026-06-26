@@ -90,6 +90,133 @@ export function getOcrProvider(env: any = null): {
     return { provider: "none" };
 }
 
+// ─── Qwen3-VL Token Usage & Cost Accounting ──────────────────────────────────
+// The Fireworks/Qwen chat-completions response returns a `usage` object that was
+// previously discarded. We now capture it per call and aggregate it per job so
+// that a REAL per-image and per-batch cost can be reported from measured tokens.
+
+export interface TokenUsage {
+	prompt_tokens: number;
+	completion_tokens: number;
+	total_tokens: number;
+}
+
+export interface CostBreakdown {
+	imageCount: number;
+	totalPromptTokens: number;
+	totalCompletionTokens: number;
+	totalTokens: number;
+	/** Average tokens per image (total_tokens / imageCount). */
+	avgTokensPerImage: number;
+	/** Per-1M-token list price actually used for the calculation, or null. */
+	inputPricePerMillion: number | null;
+	outputPricePerMillion: number | null;
+	/** Measured USD cost for the whole batch, or null if no price configured. */
+	batchCostUsd: number | null;
+	/** Measured USD cost per image, or null if no price configured. */
+	costPerImageUsd: number | null;
+	/**
+	 * Whether the price used has been independently verified. Defaults to false
+	 * for the built-in public list-price fallback — set FIREWORKS_* env vars (or
+	 * confirm the published price) before treating the cost as authoritative.
+	 */
+	priceVerified: boolean;
+	priceSource: string;
+}
+
+/**
+ * Published Fireworks serverless list price for `qwen3-vl-235b-a22b-instruct`,
+ * in USD per 1,000,000 tokens. These are FALLBACK defaults only — they are NOT
+ * independently verified here, so any cost computed from them is tagged
+ * `priceVerified: false`. Override with the FIREWORKS_QWEN3VL_INPUT_PRICE_PER_1M
+ * and FIREWORKS_QWEN3VL_OUTPUT_PRICE_PER_1M env vars once you have confirmed the
+ * current published figure at https://fireworks.ai/pricing.
+ */
+const FIREWORKS_QWEN3VL_DEFAULT_INPUT_PRICE_PER_1M = 0.22;
+const FIREWORKS_QWEN3VL_DEFAULT_OUTPUT_PRICE_PER_1M = 0.88;
+const FIREWORKS_PRICE_SOURCE = "https://fireworks.ai/pricing (public list price, verify before reporting)";
+
+function resolvePricePerMillion(
+	env: any,
+	envVar: string,
+	fallback: number,
+): { value: number; verified: boolean } {
+	const raw =
+		env?.[envVar] ??
+		(typeof process !== "undefined" ? process.env[envVar] : undefined);
+	if (raw !== undefined && raw !== "") {
+		const parsed = Number(raw);
+		if (Number.isFinite(parsed) && parsed >= 0) {
+			return { value: parsed, verified: true };
+		}
+	}
+	return { value: fallback, verified: false };
+}
+
+/**
+ * Accumulates Qwen3-VL token usage across all images in a single job so a real
+ * per-image and per-batch cost can be computed from MEASURED tokens.
+ */
+export class JobUsageAccumulator {
+	private prompt = 0;
+	private completion = 0;
+	private total = 0;
+	private images = 0;
+
+	/** Records the `usage` object from one Qwen3-VL response. No-op if absent. */
+	record(usage: TokenUsage | null | undefined): void {
+		if (!usage) return;
+		this.images++;
+		this.prompt += usage.prompt_tokens || 0;
+		this.completion += usage.completion_tokens || 0;
+		this.total +=
+			usage.total_tokens ||
+			(usage.prompt_tokens || 0) + (usage.completion_tokens || 0);
+	}
+
+	get hasData(): boolean {
+		return this.images > 0;
+	}
+
+	/**
+	 * Computes the cost breakdown from the aggregated tokens. Returns null if no
+	 * usage was ever captured (e.g. an all-cache-hit run) so callers can report
+	 * "to be measured" rather than fabricating a number.
+	 */
+	computeCost(env: any = null): CostBreakdown | null {
+		if (this.images === 0) return null;
+
+		const input = resolvePricePerMillion(
+			env,
+			"FIREWORKS_QWEN3VL_INPUT_PRICE_PER_1M",
+			FIREWORKS_QWEN3VL_DEFAULT_INPUT_PRICE_PER_1M,
+		);
+		const output = resolvePricePerMillion(
+			env,
+			"FIREWORKS_QWEN3VL_OUTPUT_PRICE_PER_1M",
+			FIREWORKS_QWEN3VL_DEFAULT_OUTPUT_PRICE_PER_1M,
+		);
+
+		const batchCostUsd =
+			(this.prompt / 1_000_000) * input.value +
+			(this.completion / 1_000_000) * output.value;
+
+		return {
+			imageCount: this.images,
+			totalPromptTokens: this.prompt,
+			totalCompletionTokens: this.completion,
+			totalTokens: this.total,
+			avgTokensPerImage: Math.round(this.total / this.images),
+			inputPricePerMillion: input.value,
+			outputPricePerMillion: output.value,
+			batchCostUsd,
+			costPerImageUsd: batchCostUsd / this.images,
+			priceVerified: input.verified && output.verified,
+			priceSource: FIREWORKS_PRICE_SOURCE,
+		};
+	}
+}
+
 async function extractWithRolmOCR(base64Image: string, env: any = null, reporter: any = null, fileName: string = ""): Promise<string> {
     const config = getOcrProvider(env);
     if (config.provider !== "rolmocr" || !config.endpoint) {
@@ -240,7 +367,7 @@ async function removeBackground(
 	}
 }
 
-async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrText: string, env: any = null, watermarkData: any = null): Promise<IMDBProduct | null> {
+async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrText: string, env: any = null, watermarkData: any = null, usageAccumulator: JobUsageAccumulator | null = null): Promise<IMDBProduct | null> {
     const base64Image = Buffer.from(imageBuffer).toString("base64");
     
     // Read from Cloudflare env bindings if available, otherwise fallback to process.env
@@ -337,6 +464,18 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
 
     const data = (await response.json()) as any;
     const content = data.choices[0].message.content;
+
+    // Capture the token usage returned by Fireworks/Qwen (previously discarded)
+    // so the job can report a real, measured cost.
+    if (data.usage) {
+        const usage: TokenUsage = {
+            prompt_tokens: data.usage.prompt_tokens ?? 0,
+            completion_tokens: data.usage.completion_tokens ?? 0,
+            total_tokens: data.usage.total_tokens ?? 0,
+        };
+        usageAccumulator?.record(usage);
+        console.log(`[Qwen3-VL] Usage for ${fileName}: prompt=${usage.prompt_tokens} completion=${usage.completion_tokens} total=${usage.total_tokens}`);
+    }
     
     try {
         let jsonStr = content;
@@ -509,6 +648,7 @@ export async function processJob(
 
         const rawExtractions: IMDBProduct[] = [];
         let anyWatermarkFound = false;
+        const usageAccumulator = new JobUsageAccumulator();
         const limit = pLimit(5); // 5 concurrent requests to avoid rate limits
 
         const ocrConfig = getOcrProvider(env);
@@ -734,7 +874,7 @@ export async function processJob(
             // Step 2: Cognition (Qwen3-VL) — receives clean background-removed buffer if watermark
             // was already found, otherwise receives the original buffer so it can see the watermark margins.
             const cognitionBuffer = watermarkData ? cleanBuffer : buffer;
-            const extracted = await extractWithQwen(cognitionBuffer, fileName, ocrText, env, watermarkData);
+            const extracted = await extractWithQwen(cognitionBuffer, fileName, ocrText, env, watermarkData, usageAccumulator);
             if (extracted) {
                 // Sanitize hallucinated prompt example tags (e.g. GH000364912)
                 if (extracted.imageTag) {
@@ -837,6 +977,20 @@ export async function processJob(
 
         await reporter.updateNodeState("ocr", "completed");
         await reporter.updateEdgeState("e1", true, "#10b981");
+
+        // ── Qwen3-VL cost accounting (from MEASURED token usage) ─────────────
+        const cost = usageAccumulator.computeCost(env);
+        if (cost) {
+            const perImage = cost.costPerImageUsd !== null ? `$${cost.costPerImageUsd.toFixed(6)}` : "to be measured";
+            const batch = cost.batchCostUsd !== null ? `$${cost.batchCostUsd.toFixed(6)}` : "to be measured";
+            const verifiedNote = cost.priceVerified ? "" : " (UNVERIFIED list price — confirm published Fireworks pricing)";
+            console.log(`[Pipeline] Job ${jobId} Qwen3-VL usage — images=${cost.imageCount} prompt=${cost.totalPromptTokens} completion=${cost.totalCompletionTokens} total=${cost.totalTokens} avg/image=${cost.avgTokensPerImage}`);
+            console.log(`[Pipeline] Job ${jobId} Qwen3-VL cost — per-image=${perImage} batch=${batch}${verifiedNote}`);
+            await reporter.addLog("structured", `Qwen3-VL token usage: ${cost.totalTokens} tokens across ${cost.imageCount} images (${cost.avgTokensPerImage}/image). Measured cost: ${batch}/batch, ${perImage}/image${verifiedNote}.`, cost.priceVerified ? "info" : "warning");
+        } else {
+            console.log(`[Pipeline] Job ${jobId} — no Qwen3-VL token usage captured (e.g. all cache hits); cost to be measured.`);
+            await reporter.addLog("structured", "No Qwen3-VL token usage captured for this job (e.g. cache hits) — cost to be measured.", "info");
+        }
 
         // Watermark Parsing phase visual update
         await reporter.updateNodeState("watermark", "active");
