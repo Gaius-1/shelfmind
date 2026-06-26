@@ -964,26 +964,24 @@ export async function processJob(
         // 4. Merge Suggestions (Duplicate Detection)
         const newRecords = await db.select().from(imdbRecords).where(and(eq(imdbRecords.jobId, jobId), eq(imdbRecords.organisationId, orgId)));
         
-        const newBarcodes = [...new Set(newRecords.map((r: any) => normalizeField("BARCODE", r.BARCODE)).filter(Boolean))] as string[];
-        const barcodeMatches = newBarcodes.length
-            ? await db.select().from(imdbRecords).where(and(
-                eq(imdbRecords.organisationId, orgId),
-                eq(imdbRecords.status, "ACTIVE"),
-                inArray(imdbRecords.BARCODE, newBarcodes),
-            ))
-            : [];
-            
-        const barcodeMatchMap = new Map<string, typeof barcodeMatches>();
-        for (const match of barcodeMatches) {
-            const bc = normalizeField("BARCODE", match.BARCODE);
-            if (!barcodeMatchMap.has(bc)) barcodeMatchMap.set(bc, []);
-            barcodeMatchMap.get(bc)!.push(match);
-        }
-
         const allActiveRecords = await db.select().from(imdbRecords).where(and(
             eq(imdbRecords.organisationId, orgId), 
             eq(imdbRecords.status, "ACTIVE")
         ));
+
+        const newBarcodes = [...new Set(newRecords.map((r: any) => normalizeField("BARCODE", r.BARCODE)).filter(Boolean))] as string[];
+        const newBarcodesSet = new Set(newBarcodes);
+        
+        const barcodeMatchMap = new Map<string, typeof allActiveRecords>();
+        if (newBarcodesSet.size > 0) {
+            for (const match of allActiveRecords) {
+                if (match.BARCODE && newBarcodesSet.has(match.BARCODE)) {
+                    const bc = normalizeField("BARCODE", match.BARCODE);
+                    if (!barcodeMatchMap.has(bc)) barcodeMatchMap.set(bc, []);
+                    barcodeMatchMap.get(bc)!.push(match);
+                }
+            }
+        }
         
         const dupInserts: any[] = [];
         const seenPairs = new Set<string>();
@@ -1040,7 +1038,9 @@ export async function processJob(
                     continue;
                 }
 
-                if (newBrand && existingBrand && newBrand.toLowerCase() === existingBrand.toLowerCase() && newRec.WEIGHT === existing.WEIGHT) {
+                const newWeight = normalizeField("WEIGHT", newRec.WEIGHT);
+                const existingWeight = normalizeField("WEIGHT", existing.WEIGHT);
+                if (newBrand && existingBrand && newBrand.toLowerCase() === existingBrand.toLowerCase() && newWeight && newWeight === existingWeight) {
                     // FRAGRANCE_FLAVOR conflict guard
                     if (newRec.FRAGRANCE_FLAVOR && existing.FRAGRANCE_FLAVOR && newRec.FRAGRANCE_FLAVOR.toLowerCase() !== existing.FRAGRANCE_FLAVOR.toLowerCase()) {
                         continue;
