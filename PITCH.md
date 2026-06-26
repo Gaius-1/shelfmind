@@ -97,12 +97,13 @@ FRAGRANCE_FLAVOR 0.6 · PROMOTION 0.5 · ADDONS 0.5 · TAGLINE 0.5
 
 ## Slide 7 — Why Qwen3-VL
 
-- **Model:** `qwen3-vl-235b-a22b-instruct`, served via **Fireworks AI**. *(`src/lib/pipeline.ts` lines 447, 561.)*
+- **Default model:** `qwen3-vl-235b-a22b-instruct` (id `qwen3-vl-235b`), served via the **Alibaba Cloud** Qwen MaaS endpoint. *(`src/lib/models.ts` `VISION_MODELS`, `DEFAULT_VISION_MODEL_ID`.)*
 - **Job:** map a *clean, isolated* product label + OCR text to a strict 13-column JSON schema — a vision-language task, not plain OCR.
 - **Fit for the hybrid design:** Qwen handles open-ended label interpretation, while the deterministic watermark layer overrides it on the fields where a printed tag is authoritative — combining model flexibility with ground-truth precision.
-- **Operational:** single Fireworks endpoint shared with RolmOCR; responses include a `usage` object we now capture for real cost accounting (Slide 11 / Part B).
+- **Pluggable per job:** the extraction model is selectable from a registry — Qwen3-VL 235B / 30B / Qwen-VL-Max (Alibaba Cloud), plus GPT-4o and Gemini 2.0 Flash (via OpenRouter). The chosen id is stored on the job row; each model carries its own pricing for cost accounting (Slide 11). *(`src/lib/models.ts`.)*
+- **Operational:** every response's `usage` object is parsed (`parseUsage`) and aggregated per job for real cost accounting (Slide 11). RolmOCR transcription runs separately via **Fireworks AI**.
 
-*Source: `context/architecture.md` (tech-stack table), `src/lib/pipeline.ts`.*
+*Source: `src/lib/models.ts`, `src/lib/pipeline.ts`.*
 
 ---
 
@@ -118,7 +119,8 @@ Entirely on **Cloudflare's edge** — API, async processing, storage, and real-t
 | Cache | **KV** — extraction results, **7-day TTL** |
 | Image processing | **Cloudflare Images** (BiRefNet background removal) |
 | Real-time | **Durable Objects** + WebSockets (pipeline visualizer) |
-| OCR / Vision | **Fireworks AI** (RolmOCR + Qwen3-VL) |
+| OCR | **RolmOCR** via **Fireworks AI** (Google Vision fallback) |
+| Vision extraction | Selectable registry (`src/lib/models.ts`) — default **Qwen3-VL 235B** via **Alibaba Cloud** Qwen MaaS; GPT-4o / Gemini via OpenRouter |
 | Auth & tenancy | **Better Auth** org plugin |
 | Frontend | TanStack (Router/Query/Store/Table/Form) + shadcn/ui + Tailwind |
 
@@ -180,22 +182,23 @@ Multi-tenant: every D1 row carries `organisation_id`; R2/KV keys are org-namespa
 **Pending evaluation against provided ground truth.** The official ground-truth Excel is **not** committed to the repo, so `context/eval_results.json` has not been produced. `src/scripts/evaluate.ts` (Part A) will compute per-column accuracy, overall accuracy across all 13 columns, and a fully-correct-product count **the moment** a ground-truth file is supplied — it **fails loudly** rather than fabricating scores. *No accuracy percentage is shown because none has been measured.*
 
 ### Cost
-**N/A — to be measured.** Part B now captures the real Qwen3-VL `usage` (prompt/completion/total tokens) per job; a live run has not yet been executed against this dataset, so no measured token count or dollar figure is reported. See Slide 11 for the mechanism and the price-citation rule.
+**Dollar figure: N/A — to be measured.** The pipeline now captures the real `usage` (input/output tokens) from every vision call and computes & persists a per-job `totalCost` (`src/lib/models.ts` + `src/lib/pipeline.ts`). No live run has been executed against this dataset in-session, so **no measured token count or dollar total is reported here** — the actual figure populates automatically on the next keyed run. The pricing used is the **approximate public list price** in `models.ts` (explicitly "not a billing source of truth"). See Slide 11.
 
 ---
 
 ## Slide 11 — Cost Methodology (Part B)
 
-ShelfMind now records the **measured** token usage that the Fireworks/Qwen response returns (previously discarded):
+ShelfMind records the **measured** token usage that every vision response returns (previously discarded) and turns it into a per-job cost:
 
-- `extractWithQwen` reads `usage.{prompt_tokens, completion_tokens, total_tokens}` per image and feeds a `JobUsageAccumulator`.
-- Per job we log totals, average tokens/image, and a computed USD cost.
-- **Cost = (prompt_tokens ÷ 1e6 × input_price) + (completion_tokens ÷ 1e6 × output_price).**
-- Price is read from `FIREWORKS_QWEN3VL_INPUT_PRICE_PER_1M` / `FIREWORKS_QWEN3VL_OUTPUT_PRICE_PER_1M` env vars. Until those are set to a confirmed published figure, any computed cost is tagged **`priceVerified: false`** and surfaced as **unverified**.
+- `extractWithQwen` and `extractWatermarkWithQwen` return a normalized `usage` via `parseUsage` (`{ inputTokens, outputTokens }`).
+- A per-job `CostAccumulator` aggregates usage across all calls (`addUsage`), and the cost is computed per the selected model's pricing:
+  **`cost = inputTokens/1e6 × inputPer1M + outputTokens/1e6 × outputPer1M`** (`computeCost`).
+- The job row persists `visionModel` and `totalCost`; the pipeline logs e.g. *"Token usage: X in / Y out — est. cost $Z on <model label>"*.
+- Each registry model carries its own pricing table (`src/lib/models.ts` `ModelPricing`), so a frontier-model comparison falls out of the same run by switching `visionModel` (e.g. Qwen3-VL 235B vs GPT-4o vs Gemini 2.0 Flash).
 
-> **Price-citation rule:** any per-token price or frontier-model comparison must cite *public provider pricing as of [date]* with the figure shown. This deck quotes **no specific price** because none has been independently verified in-session — the wiring is in place to produce a real, dated figure on the next live run.
+> **Pricing caveat:** the `pricing` figures in `models.ts` are **approximate public list prices**, explicitly documented as *"not a billing source of truth."* Any quoted dollar figure or frontier comparison must therefore be labelled *figures from public provider pricing as of [date]* and confirmed against the provider before use. This deck quotes **no specific dollar total** because none has been measured in-session.
 
-*Source: `src/lib/pipeline.ts` (`TokenUsage`, `JobUsageAccumulator`, `extractWithQwen`).*
+*Source: `src/lib/models.ts` (`VISION_MODELS`, `ModelPricing`, `parseUsage`, `computeCost`, `formatCost`), `src/lib/pipeline.ts` (`CostAccumulator`, `addUsage`, per-job `totalCost`).*
 
 ---
 
@@ -213,7 +216,7 @@ ShelfMind now records the **measured** token usage that the Fireworks/Qwen respo
 
 ### Roadmap
 - **Run the measured eval:** add the official ground-truth Excel → generate `context/eval_results.json` → publish real per-column & overall accuracy.
-- **Run a measured cost pass:** execute a live batch, set the confirmed Fireworks price env vars, publish real per-image / per-batch cost and a dated frontier comparison.
+- **Run a measured cost pass:** execute a live keyed batch to record real per-job `totalCost`, confirm the `models.ts` pricing against current public provider pricing, and publish a dated frontier comparison by re-running across `visionModel` options.
 - Expand normalization coverage and duplicate-detection heuristics.
 - Harden the review queue for high-volume field teams.
 

@@ -8,7 +8,7 @@ import { cn } from '#/lib/utils.ts'
 export interface DuplicatePair {
   id: string
   similarityScore: number
-  reason: 'BARCODE_MATCH' | 'BRAND_WEIGHT_MATCH' | string | null
+  reason: 'BARCODE_MATCH' | 'NAME_MATCH' | 'BRAND_WEIGHT_MATCH' | 'CROSS_BATCH_MATCH' | string | null
   status: 'PENDING' | 'DISMISSED' | 'MERGED'
   recordA: any
   recordB: any
@@ -56,7 +56,9 @@ export function DuplicateCard({ pair, orgId }: DuplicateCardProps) {
 
   const getReasonLabel = (reason: string | null) => {
     if (reason === 'BARCODE_MATCH') return 'Exact Barcode Match'
+    if (reason === 'NAME_MATCH') return 'Item Name Similarity'
     if (reason === 'BRAND_WEIGHT_MATCH') return 'Brand & Weight Similarity'
+    if (reason === 'CROSS_BATCH_MATCH') return 'Cross-Batch Match (Watermark/Barcode)'
     return reason || 'Candidate Match'
   }
 

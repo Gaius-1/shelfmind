@@ -36,6 +36,13 @@
       "when": 1782401853533,
       "tag": "0004_special_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1782441907618,
+      "tag": "0005_fixed_cyclops",
+      "breakpoints": true
     }
   ]
 }

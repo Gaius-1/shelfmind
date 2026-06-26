@@ -9,6 +9,10 @@ export interface Job {
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
   progress: number
   imageCount: number
+  visionModel: string | null
+  inputTokens: number | null
+  outputTokens: number | null
+  totalCost: number | null
   startedAt: string | null
   completedAt: string | null
   error: string | null

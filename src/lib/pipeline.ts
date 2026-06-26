@@ -5,10 +5,27 @@ import pLimit from "p-limit";
 import type { IMDBProduct } from "../types/imdb.ts";
 import { FIELD_WEIGHTS, FIELD_EMPTY_THRESHOLD } from "../types/imdb.ts";
 import { getUpload } from "./storage.ts";
-import { groupAndMergeImages, isSafeSubstringMatch } from "./grouping.ts";
-import { normalizeBarcode, normalizeWeight, normalizePackaging, normalizeCountry, normalizeField, normalizeManufacturer, normalizeBrand, isValidEAN13 } from "./normalization.ts";
+import { groupAndMergeImages, isSafeSubstringMatch, crossBatchProductsMatch } from "./grouping.ts";
+import { normalizeBarcode, normalizeWeight, normalizePackaging, normalizeCountry, normalizeField, normalizeManufacturer, normalizeBrand } from "./normalization.ts";
+import { validateBarcode } from "./barcode.ts";
+import { decodeBarcodeFromImage } from "./zxing.ts";
 import { parseWatermark } from "./watermark-parser.ts";
 import { hashImage, getCachedExtraction, putCachedExtraction, invalidateStats } from "./kv-cache.ts";
+import { type VisionModelDef, type TokenUsage, getVisionModel, resolveModelRuntime, parseUsage, computeCost } from "./models.ts";
+
+// Accumulates token usage and estimated cost across all AI calls in a job.
+// JS is single-threaded so the += updates are safe under pLimit concurrency.
+interface CostAccumulator {
+	inputTokens: number;
+	outputTokens: number;
+	cost: number;
+}
+
+function addUsage(acc: CostAccumulator, usage: TokenUsage, model: VisionModelDef): void {
+	acc.inputTokens += usage.inputTokens;
+	acc.outputTokens += usage.outputTokens;
+	acc.cost += computeCost(model.pricing, usage);
+}
 
 export class JobReporter {
 	private stub: any = null;
@@ -88,133 +105,6 @@ export function getOcrProvider(env: any = null): {
     }
 
     return { provider: "none" };
-}
-
-// ─── Qwen3-VL Token Usage & Cost Accounting ──────────────────────────────────
-// The Fireworks/Qwen chat-completions response returns a `usage` object that was
-// previously discarded. We now capture it per call and aggregate it per job so
-// that a REAL per-image and per-batch cost can be reported from measured tokens.
-
-export interface TokenUsage {
-	prompt_tokens: number;
-	completion_tokens: number;
-	total_tokens: number;
-}
-
-export interface CostBreakdown {
-	imageCount: number;
-	totalPromptTokens: number;
-	totalCompletionTokens: number;
-	totalTokens: number;
-	/** Average tokens per image (total_tokens / imageCount). */
-	avgTokensPerImage: number;
-	/** Per-1M-token list price actually used for the calculation, or null. */
-	inputPricePerMillion: number | null;
-	outputPricePerMillion: number | null;
-	/** Measured USD cost for the whole batch, or null if no price configured. */
-	batchCostUsd: number | null;
-	/** Measured USD cost per image, or null if no price configured. */
-	costPerImageUsd: number | null;
-	/**
-	 * Whether the price used has been independently verified. Defaults to false
-	 * for the built-in public list-price fallback — set FIREWORKS_* env vars (or
-	 * confirm the published price) before treating the cost as authoritative.
-	 */
-	priceVerified: boolean;
-	priceSource: string;
-}
-
-/**
- * Published Fireworks serverless list price for `qwen3-vl-235b-a22b-instruct`,
- * in USD per 1,000,000 tokens. These are FALLBACK defaults only — they are NOT
- * independently verified here, so any cost computed from them is tagged
- * `priceVerified: false`. Override with the FIREWORKS_QWEN3VL_INPUT_PRICE_PER_1M
- * and FIREWORKS_QWEN3VL_OUTPUT_PRICE_PER_1M env vars once you have confirmed the
- * current published figure at https://fireworks.ai/pricing.
- */
-const FIREWORKS_QWEN3VL_DEFAULT_INPUT_PRICE_PER_1M = 0.22;
-const FIREWORKS_QWEN3VL_DEFAULT_OUTPUT_PRICE_PER_1M = 0.88;
-const FIREWORKS_PRICE_SOURCE = "https://fireworks.ai/pricing (public list price, verify before reporting)";
-
-function resolvePricePerMillion(
-	env: any,
-	envVar: string,
-	fallback: number,
-): { value: number; verified: boolean } {
-	const raw =
-		env?.[envVar] ??
-		(typeof process !== "undefined" ? process.env[envVar] : undefined);
-	if (raw !== undefined && raw !== "") {
-		const parsed = Number(raw);
-		if (Number.isFinite(parsed) && parsed >= 0) {
-			return { value: parsed, verified: true };
-		}
-	}
-	return { value: fallback, verified: false };
-}
-
-/**
- * Accumulates Qwen3-VL token usage across all images in a single job so a real
- * per-image and per-batch cost can be computed from MEASURED tokens.
- */
-export class JobUsageAccumulator {
-	private prompt = 0;
-	private completion = 0;
-	private total = 0;
-	private images = 0;
-
-	/** Records the `usage` object from one Qwen3-VL response. No-op if absent. */
-	record(usage: TokenUsage | null | undefined): void {
-		if (!usage) return;
-		this.images++;
-		this.prompt += usage.prompt_tokens || 0;
-		this.completion += usage.completion_tokens || 0;
-		this.total +=
-			usage.total_tokens ||
-			(usage.prompt_tokens || 0) + (usage.completion_tokens || 0);
-	}
-
-	get hasData(): boolean {
-		return this.images > 0;
-	}
-
-	/**
-	 * Computes the cost breakdown from the aggregated tokens. Returns null if no
-	 * usage was ever captured (e.g. an all-cache-hit run) so callers can report
-	 * "to be measured" rather than fabricating a number.
-	 */
-	computeCost(env: any = null): CostBreakdown | null {
-		if (this.images === 0) return null;
-
-		const input = resolvePricePerMillion(
-			env,
-			"FIREWORKS_QWEN3VL_INPUT_PRICE_PER_1M",
-			FIREWORKS_QWEN3VL_DEFAULT_INPUT_PRICE_PER_1M,
-		);
-		const output = resolvePricePerMillion(
-			env,
-			"FIREWORKS_QWEN3VL_OUTPUT_PRICE_PER_1M",
-			FIREWORKS_QWEN3VL_DEFAULT_OUTPUT_PRICE_PER_1M,
-		);
-
-		const batchCostUsd =
-			(this.prompt / 1_000_000) * input.value +
-			(this.completion / 1_000_000) * output.value;
-
-		return {
-			imageCount: this.images,
-			totalPromptTokens: this.prompt,
-			totalCompletionTokens: this.completion,
-			totalTokens: this.total,
-			avgTokensPerImage: Math.round(this.total / this.images),
-			inputPricePerMillion: input.value,
-			outputPricePerMillion: output.value,
-			batchCostUsd,
-			costPerImageUsd: batchCostUsd / this.images,
-			priceVerified: input.verified && output.verified,
-			priceSource: FIREWORKS_PRICE_SOURCE,
-		};
-	}
 }
 
 async function extractWithRolmOCR(base64Image: string, env: any = null, reporter: any = null, fileName: string = ""): Promise<string> {
@@ -367,16 +257,15 @@ async function removeBackground(
 	}
 }
 
-async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrText: string, env: any = null, watermarkData: any = null, usageAccumulator: JobUsageAccumulator | null = null): Promise<IMDBProduct | null> {
+async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrText: string, env: any = null, watermarkData: any = null, model: VisionModelDef = getVisionModel()): Promise<{ product: IMDBProduct | null; usage: TokenUsage }> {
     const base64Image = Buffer.from(imageBuffer).toString("base64");
-    
-    // Read from Cloudflare env bindings if available, otherwise fallback to process.env
-    const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined);
-    const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-e8idycj2w4qgstsm.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
 
-    if (!apiKey) {
-        throw new Error("Missing QWEN_API_KEY in environment");
+    const runtime = resolveModelRuntime(model, env);
+    if (!runtime) {
+        throw new Error(`Missing API key for vision model "${model.id}" (expected one of: ${model.apiKeyEnvKeys.join(", ")})`);
     }
+    const { endpoint, apiKey, modelName } = runtime;
+    const emptyUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
 
     let prompt = "";
     if (watermarkData) {
@@ -444,7 +333,7 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            model: "qwen3-vl-235b-a22b-instruct",
+            model: modelName,
             messages: [
                 {
                     role: "user",
@@ -458,24 +347,13 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
     });
 
     if (!response.ok) {
-        console.error(`[Qwen3-VL] Failed for ${fileName}:`, await response.text());
-        return null;
+        console.error(`[Vision:${model.id}] Failed for ${fileName}:`, await response.text());
+        return { product: null, usage: emptyUsage };
     }
 
     const data = (await response.json()) as any;
+    const usage = parseUsage(data.usage);
     const content = data.choices[0].message.content;
-
-    // Capture the token usage returned by Fireworks/Qwen (previously discarded)
-    // so the job can report a real, measured cost.
-    if (data.usage) {
-        const usage: TokenUsage = {
-            prompt_tokens: data.usage.prompt_tokens ?? 0,
-            completion_tokens: data.usage.completion_tokens ?? 0,
-            total_tokens: data.usage.total_tokens ?? 0,
-        };
-        usageAccumulator?.record(usage);
-        console.log(`[Qwen3-VL] Usage for ${fileName}: prompt=${usage.prompt_tokens} completion=${usage.completion_tokens} total=${usage.total_tokens}`);
-    }
     
     try {
         let jsonStr = content;
@@ -508,37 +386,40 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
         };
 
         return {
-            ITEM_NAME: enforceThreshold("ITEM_NAME", parsed.ITEM_NAME || ""),
-            BARCODE: enforceThreshold("BARCODE", parsed.BARCODE || ""),
-            MANUFACTURER: enforceThreshold("MANUFACTURER", parsed.MANUFACTURER || ""),
-            BRAND: enforceThreshold("BRAND", parsed.BRAND || ""),
-            WEIGHT: enforceThreshold("WEIGHT", parsed.WEIGHT || ""),
-            PACKAGING_TYPE: enforceThreshold("PACKAGING_TYPE", parsed.PACKAGING_TYPE || ""),
-            COUNTRY: enforceThreshold("COUNTRY", parsed.COUNTRY || ""),
-            VARIANT: enforceThreshold("VARIANT", parsed.VARIANT || ""),
-            TYPE: enforceThreshold("TYPE", parsed.TYPE || ""),
-            FRAGRANCE_FLAVOR: enforceThreshold("FRAGRANCE_FLAVOR", parsed.FRAGRANCE_FLAVOR || ""),
-            PROMOTION: enforceThreshold("PROMOTION", parsed.PROMOTION || ""),
-            ADDONS: enforceThreshold("ADDONS", parsed.ADDONS || ""),
-            TAGLINE: enforceThreshold("TAGLINE", parsed.TAGLINE || ""),
-            imageTag: parsed.imageTag || "",
-            fieldConfidence: fieldConfidence,
-            sourceImages: [fileName],
-            rawVisionData: { [fileName]: parsed }
+            product: {
+                ITEM_NAME: enforceThreshold("ITEM_NAME", parsed.ITEM_NAME || ""),
+                BARCODE: enforceThreshold("BARCODE", parsed.BARCODE || ""),
+                MANUFACTURER: enforceThreshold("MANUFACTURER", parsed.MANUFACTURER || ""),
+                BRAND: enforceThreshold("BRAND", parsed.BRAND || ""),
+                WEIGHT: enforceThreshold("WEIGHT", parsed.WEIGHT || ""),
+                PACKAGING_TYPE: enforceThreshold("PACKAGING_TYPE", parsed.PACKAGING_TYPE || ""),
+                COUNTRY: enforceThreshold("COUNTRY", parsed.COUNTRY || ""),
+                VARIANT: enforceThreshold("VARIANT", parsed.VARIANT || ""),
+                TYPE: enforceThreshold("TYPE", parsed.TYPE || ""),
+                FRAGRANCE_FLAVOR: enforceThreshold("FRAGRANCE_FLAVOR", parsed.FRAGRANCE_FLAVOR || ""),
+                PROMOTION: enforceThreshold("PROMOTION", parsed.PROMOTION || ""),
+                ADDONS: enforceThreshold("ADDONS", parsed.ADDONS || ""),
+                TAGLINE: enforceThreshold("TAGLINE", parsed.TAGLINE || ""),
+                imageTag: parsed.imageTag || "",
+                fieldConfidence: fieldConfidence,
+                sourceImages: [fileName],
+                rawVisionData: { [fileName]: parsed }
+            },
+            usage,
         };
     } catch (e) {
-        console.error(`[Qwen3-VL] Failed to parse JSON for ${fileName}`, e);
-        return null;
+        console.error(`[Vision:${model.id}] Failed to parse JSON for ${fileName}`, e);
+        return { product: null, usage };
     }
 }
 
-async function extractWatermarkWithQwen(croppedBase64: string, env: any = null): Promise<string> {
-    const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined);
-    const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-e8idycj2w4qgstsm.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
-
-    if (!apiKey) {
-        throw new Error("Missing QWEN_API_KEY for watermark extraction");
+async function extractWatermarkWithQwen(croppedBase64: string, env: any = null, model: VisionModelDef = getVisionModel()): Promise<{ text: string; usage: TokenUsage }> {
+    const emptyUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
+    const runtime = resolveModelRuntime(model, env);
+    if (!runtime) {
+        throw new Error(`Missing API key for vision model "${model.id}" for watermark extraction`);
     }
+    const { endpoint, apiKey, modelName } = runtime;
 
     const prompt = `Read the watermark text printed along the edge/margin of this image.
 The watermark is typically a single line printed in small text on one edge of the photo. It usually starts with an audit/tracking ID (e.g. GH000413323_B, C1000114615, CI00021421_A) followed by a full product description (e.g. "Zesta Ginger 25+7 Free 57.6g Envelope Teabag box Cardboard Suiza") and sometimes ends with a side word (Front/Back/Left/Right).
@@ -558,7 +439,7 @@ CRITICAL RULES:
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                model: "qwen3-vl-235b-a22b-instruct",
+                model: modelName,
                 messages: [
                     {
                         role: "user",
@@ -572,18 +453,19 @@ CRITICAL RULES:
         });
 
         if (!response.ok) {
-            console.error("[Qwen3-VL-Watermark] API error:", await response.text());
-            return "";
+            console.error("[Vision-Watermark] API error:", await response.text());
+            return { text: "", usage: emptyUsage };
         }
 
         const data = (await response.json()) as any;
+        const usage = parseUsage(data.usage);
         const raw = data.choices?.[0]?.message?.content ?? "";
         // Strip Qwen3 <think> reasoning block before returning watermark text
         const text = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-        return text;
+        return { text, usage };
     } catch (e) {
-        console.error("[Qwen3-VL-Watermark] Failed to fetch:", e);
-        return "";
+        console.error("[Vision-Watermark] Failed to fetch:", e);
+        return { text: "", usage: emptyUsage };
     }
 }
 
@@ -646,9 +528,14 @@ export async function processJob(
     try {
         await db.update(jobs).set({ status: "PROCESSING", progress: 10, startedAt: new Date().toISOString() }).where(eq(jobs.id, jobId));
 
+        // Resolve the vision model selected for this job (falls back to default).
+        const jobRow = (await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1))[0];
+        const visionModel = getVisionModel(jobRow?.visionModel);
+        const costAcc: CostAccumulator = { inputTokens: 0, outputTokens: 0, cost: 0 };
+        await reporter.addLog("structured", `Vision model: ${visionModel.label} (${visionModel.provider})`, "info");
+
         const rawExtractions: IMDBProduct[] = [];
         let anyWatermarkFound = false;
-        const usageAccumulator = new JobUsageAccumulator();
         const limit = pLimit(5); // 5 concurrent requests to avoid rate limits
 
         const ocrConfig = getOcrProvider(env);
@@ -689,6 +576,7 @@ export async function processJob(
                     for (const k of Object.keys(product.rawVisionData)) {
                         if (k.endsWith("_ocr")) newRawVisionData[`${fileName}_ocr`] = product.rawVisionData[k];
                         else if (k.endsWith("_watermark")) newRawVisionData[`${fileName}_watermark`] = product.rawVisionData[k];
+                        else if (k.endsWith("_zxing")) newRawVisionData[`${fileName}_zxing`] = product.rawVisionData[k];
                         else newRawVisionData[fileName] = product.rawVisionData[k];
                     }
                     product.rawVisionData = newRawVisionData;
@@ -797,7 +685,9 @@ export async function processJob(
 				if (!watermarkData && bestEdgeOcr.length < 8 && cachedBottomBuffer && cachedBottomBuffer !== buffer) {
 					try {
 						const croppedBase64 = Buffer.from(cachedBottomBuffer).toString("base64");
-						const qwenResult = await extractWatermarkWithQwen(croppedBase64, env);
+						const watermarkResult = await extractWatermarkWithQwen(croppedBase64, env, visionModel);
+						addUsage(costAcc, watermarkResult.usage, visionModel);
+						const qwenResult = watermarkResult.text;
 						if (qwenResult) {
 							for (const line of qwenResult.split('\n')) {
 								const parsed = parseWatermark(line);
@@ -874,7 +764,9 @@ export async function processJob(
             // Step 2: Cognition (Qwen3-VL) — receives clean background-removed buffer if watermark
             // was already found, otherwise receives the original buffer so it can see the watermark margins.
             const cognitionBuffer = watermarkData ? cleanBuffer : buffer;
-            const extracted = await extractWithQwen(cognitionBuffer, fileName, ocrText, env, watermarkData, usageAccumulator);
+            const cognitionResult = await extractWithQwen(cognitionBuffer, fileName, ocrText, env, watermarkData, visionModel);
+            addUsage(costAcc, cognitionResult.usage, visionModel);
+            const extracted = cognitionResult.product;
             if (extracted) {
                 // Sanitize hallucinated prompt example tags (e.g. GH000364912)
                 if (extracted.imageTag) {
@@ -963,6 +855,22 @@ export async function processJob(
                         : `[${fileName}] Raw text extracted via Google Vision`;
                     await reporter.addLog("ocr", successMessage, "success");
                 }
+
+                // Step 2.5: Real barcode decode (ZXing). Runs on the original buffer so
+                // the printed barcode is intact. A validated decode is authoritative and
+                // overrides the vision-extracted barcode.
+                const zxingResult = await decodeBarcodeFromImage(buffer);
+                if (zxingResult) {
+                    if (!extracted.rawVisionData) extracted.rawVisionData = {};
+                    extracted.rawVisionData[`${fileName}_zxing`] = zxingResult;
+                    if (zxingResult.valid) {
+                        extracted.BARCODE = zxingResult.text;
+                        await reporter.addLog("structured", `[${fileName}] Barcode scanned via ZXing: ${zxingResult.text} (${zxingResult.format})`, "success");
+                    } else {
+                        await reporter.addLog("structured", `[${fileName}] ZXing read ${zxingResult.text} (${zxingResult.format}) — failed check digit`, "info");
+                    }
+                }
+
                 rawExtractions.push(extracted);
                 await putCachedExtraction(orgId, imageHash, extracted);
                 await reporter.addLog("structured", `[${fileName}] Data extracted successfully by Qwen3-VL${extracted.imageSide ? ` (${extracted.imageSide} side)` : ""}`, "success");
@@ -977,20 +885,6 @@ export async function processJob(
 
         await reporter.updateNodeState("ocr", "completed");
         await reporter.updateEdgeState("e1", true, "#10b981");
-
-        // ── Qwen3-VL cost accounting (from MEASURED token usage) ─────────────
-        const cost = usageAccumulator.computeCost(env);
-        if (cost) {
-            const perImage = cost.costPerImageUsd !== null ? `$${cost.costPerImageUsd.toFixed(6)}` : "to be measured";
-            const batch = cost.batchCostUsd !== null ? `$${cost.batchCostUsd.toFixed(6)}` : "to be measured";
-            const verifiedNote = cost.priceVerified ? "" : " (UNVERIFIED list price — confirm published Fireworks pricing)";
-            console.log(`[Pipeline] Job ${jobId} Qwen3-VL usage — images=${cost.imageCount} prompt=${cost.totalPromptTokens} completion=${cost.totalCompletionTokens} total=${cost.totalTokens} avg/image=${cost.avgTokensPerImage}`);
-            console.log(`[Pipeline] Job ${jobId} Qwen3-VL cost — per-image=${perImage} batch=${batch}${verifiedNote}`);
-            await reporter.addLog("structured", `Qwen3-VL token usage: ${cost.totalTokens} tokens across ${cost.imageCount} images (${cost.avgTokensPerImage}/image). Measured cost: ${batch}/batch, ${perImage}/image${verifiedNote}.`, cost.priceVerified ? "info" : "warning");
-        } else {
-            console.log(`[Pipeline] Job ${jobId} — no Qwen3-VL token usage captured (e.g. all cache hits); cost to be measured.`);
-            await reporter.addLog("structured", "No Qwen3-VL token usage captured for this job (e.g. cache hits) — cost to be measured.", "info");
-        }
 
         // Watermark Parsing phase visual update
         await reporter.updateNodeState("watermark", "active");
@@ -1063,11 +957,14 @@ export async function processJob(
             if (isMissingCritical) {
                 confidence = Math.min(confidence, 0.70);
             }
-            if (product.BARCODE) {
-                const cleanedBarcode = normalizeBarcode(product.BARCODE);
-                if (cleanedBarcode.length === 13 && !isValidEAN13(cleanedBarcode)) {
-                    confidence = Math.min(confidence, 0.70);
-                }
+            // Multi-format barcode validation (EAN-13/8, UPC-A/E, ITF-14). A present
+            // but invalid barcode caps confidence; a ZXing-scanned valid barcode is trusted.
+            const barcodeValidation = product.BARCODE ? validateBarcode(product.BARCODE) : null;
+            const zxingDecode = product.sourceImages
+                .map(f => product.rawVisionData?.[`${f}_zxing`])
+                .find(z => z?.valid);
+            if (barcodeValidation && barcodeValidation.normalized && !barcodeValidation.valid && !zxingDecode) {
+                confidence = Math.min(confidence, 0.70);
             }
             
             const flagged = confidence < 0.75;
@@ -1092,10 +989,13 @@ export async function processJob(
                 confidence,
                 flagged,
                 rawExtraction: { 
+                    barcodeValidation: barcodeValidation
+                        ? { format: barcodeValidation.format, valid: barcodeValidation.valid, message: barcodeValidation.message, scannedByZxing: !!zxingDecode }
+                        : null,
                     images: product.sourceImages.map(f => ({ 
                         fileName: f, 
                         ocr: product.rawVisionData ? product.rawVisionData[`${f}_ocr`] || null : null, 
-                        zxing: null, 
+                        zxing: product.rawVisionData ? product.rawVisionData[`${f}_zxing`] || null : null, 
                         vision: product.rawVisionData ? product.rawVisionData[f] : null,
                         watermark: product.rawVisionData ? product.rawVisionData[`${f}_watermark`] || null : null
                     })) 
@@ -1144,6 +1044,10 @@ export async function processJob(
         for (const newRec of newRecords) {
             const newBarcode = normalizeField("BARCODE", newRec.BARCODE);
             const barcodeMatchedExistingIds = new Set<string>();
+            // Track every existing record already paired with this new record so a
+            // single pair is never inserted twice under two different reasons.
+            const pairedExistingIds = new Set<string>();
+            const newProduct = toProduct(newRec);
 
             if (newBarcode && barcodeMatchMap.has(newBarcode)) {
                 for (const existing of barcodeMatchMap.get(newBarcode)!) {
@@ -1154,6 +1058,7 @@ export async function processJob(
                     seenPairs.add(pairKey);
 
                     barcodeMatchedExistingIds.add(existing.id);
+                    pairedExistingIds.add(existing.id);
                     dupInserts.push({
                         id: crypto.randomUUID(),
                         orgId,
@@ -1211,6 +1116,26 @@ export async function processJob(
                     });
                 }
             }
+
+            // Cross-batch unification: catch the same product photographed in an
+            // earlier batch using the full grouping matcher (watermark audit ID /
+            // fuzzy barcode), which the shallow checks above miss when the AI-read
+            // name/brand are noisy. Gated on a strong identity signal.
+            for (const { id: existingId, product: existingProduct } of existingProducts) {
+                if (pairedExistingIds.has(existingId)) continue;
+                if (crossBatchProductsMatch(newProduct, existingProduct)) {
+                    pairedExistingIds.add(existingId);
+                    dupInserts.push({
+                        id: crypto.randomUUID(),
+                        orgId,
+                        recordAId: newRec.id,
+                        recordBId: existingId,
+                        similarityScore: 0.95,
+                        reason: "CROSS_BATCH_MATCH",
+                        status: "PENDING",
+                    });
+                }
+            }
         }
 
         if (dupInserts.length > 0) {
@@ -1225,9 +1150,15 @@ export async function processJob(
 
         await invalidateStats(orgId);
 
+        await reporter.addLog("structured", `Token usage: ${costAcc.inputTokens.toLocaleString()} in / ${costAcc.outputTokens.toLocaleString()} out — est. cost $${costAcc.cost.toFixed(4)} on ${visionModel.label}`, "info");
+
         await db.update(jobs).set({
             status: "COMPLETED",
             progress: 100,
+            visionModel: visionModel.id,
+            inputTokens: costAcc.inputTokens,
+            outputTokens: costAcc.outputTokens,
+            totalCost: costAcc.cost,
             completedAt: new Date().toISOString(),
         }).where(eq(jobs.id, jobId));
 
@@ -1238,6 +1169,9 @@ export async function processJob(
             status: "FAILED",
             progress: 100,
             error: err?.message || String(err),
+            inputTokens: costAcc.inputTokens,
+            outputTokens: costAcc.outputTokens,
+            totalCost: costAcc.cost,
             completedAt: new Date().toISOString(),
         }).where(eq(jobs.id, jobId));
         await reporter.addLog("upload", `Job Failed: ${err?.message}`, "error");

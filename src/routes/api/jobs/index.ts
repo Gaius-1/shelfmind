@@ -4,6 +4,7 @@ import { jobs } from '#/db/schema.ts'
 import * as schema from '#/db/schema.ts'
 import { eq, lt, and } from 'drizzle-orm'
 import { deleteUploads } from '#/lib/storage.ts'
+import { getVisionModel } from '#/lib/models.ts'
 
 const routeOptions: any = {
   server: {
@@ -119,6 +120,9 @@ const routeOptions: any = {
             })
           }
 
+          // Resolve the requested vision model (validated against the registry).
+          const visionModel = getVisionModel(body.visionModel).id
+
           const jobId = crypto.randomUUID()
 
           // 5. Create job in database with UPLOADING status
@@ -129,6 +133,7 @@ const routeOptions: any = {
             status: 'UPLOADING',
             progress: 0,
             imageCount: imageCount,
+            visionModel: visionModel,
             createdAt: new Date(),
           })
 
