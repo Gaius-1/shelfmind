@@ -7,6 +7,7 @@ import { Button } from '#/components/ui/button.tsx'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table.tsx'
 import { Download, AlertCircle, FileSpreadsheet } from 'lucide-react'
 import { MicrosoftExcel } from '#/components/ui/svgs/microsoftExcel.tsx'
+import { getVisionModel, formatCost } from '#/lib/models.ts'
 
 export const Route = createFileRoute('/dashboard/exports')({
   head: () => ({
@@ -138,6 +139,8 @@ function ExportsContent({ orgId }: { orgId: string }) {
                   <TableHead className="w-[120px] font-bold">Batch ID</TableHead>
                   <TableHead className="font-bold">Date Processed</TableHead>
                   <TableHead className="font-bold text-center">Items</TableHead>
+                  <TableHead className="font-bold">Model</TableHead>
+                  <TableHead className="font-bold text-right">Est. Cost</TableHead>
                   <TableHead className="text-right font-bold">Action</TableHead>
                 </TableRow>
               </TableHeader>
@@ -160,6 +163,12 @@ function ExportsContent({ orgId }: { orgId: string }) {
                     </TableCell>
                     <TableCell className="text-center font-medium text-neutral-600 dark:text-neutral-400">
                       {job.imageCount}
+                    </TableCell>
+                    <TableCell className="text-neutral-600 dark:text-neutral-400">
+                      {job.visionModel ? getVisionModel(job.visionModel).label : '—'}
+                    </TableCell>
+                    <TableCell className="text-right font-medium text-neutral-600 dark:text-neutral-400">
+                      {formatCost(job.totalCost)}
                     </TableCell>
                     <TableCell className="text-right">
                       <Button

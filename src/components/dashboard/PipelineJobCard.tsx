@@ -6,6 +6,7 @@ import { usePipelineStream } from '#/hooks/usePipelineStream.ts'
 import { initialNodes } from '#/types/pipeline.ts'
 import type { CustomNodeData } from '#/components/pipeline/CustomNode.tsx'
 import type { Job } from '#/hooks/useJobs.ts'
+import { getVisionModel, formatCost } from '#/lib/models.ts'
 import {
   CheckCircle2,
   AlertCircle,
@@ -155,6 +156,18 @@ export function PipelineJobCard({ job }: PipelineJobCardProps) {
             <ImageIcon className="size-3.5 text-neutral-600" />
             {job.imageCount} image{job.imageCount !== 1 && 's'}
           </span>
+
+          {isCompleted && job.totalCost != null && (
+            <>
+              <div className="h-4 w-px bg-neutral-800 hidden sm:block" />
+              <span className="text-[11px] text-emerald-400/90 font-semibold flex items-center gap-1.5">
+                {formatCost(job.totalCost)}
+                {job.visionModel && (
+                  <span className="text-neutral-600 font-medium">· {getVisionModel(job.visionModel).label}</span>
+                )}
+              </span>
+            </>
+          )}
 
           {isProcessing && activeNode && (
             <>
