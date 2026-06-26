@@ -787,6 +787,18 @@ export async function processJob(
                     }
                 }
 
+                // Universal Fallback: If ITEM_NAME is STILL missing (no watermark, or empty description),
+                // synthesize it dynamically from the extracted product components so it isn't "Unnamed Product".
+                if (!extracted.ITEM_NAME || extracted.ITEM_NAME.length < 3) {
+                    extracted.ITEM_NAME = [
+                        extracted.BRAND, 
+                        extracted.VARIANT, 
+                        extracted.TYPE, 
+                        extracted.WEIGHT, 
+                        extracted.PACKAGING_TYPE
+                    ].filter(Boolean).join(" ").trim().toUpperCase();
+                }
+
                 // Clear E-number hallucination in any text field (runs in both watermark and non-watermark paths)
                 clearENumberHallucinations(extracted, reporter, fileName);
 
@@ -952,32 +964,41 @@ export async function processJob(
         // 4. Merge Suggestions (Duplicate Detection)
         const newRecords = await db.select().from(imdbRecords).where(and(eq(imdbRecords.jobId, jobId), eq(imdbRecords.organisationId, orgId)));
         
-        const newBarcodes = [...new Set(newRecords.map((r: any) => normalizeField("BARCODE", r.BARCODE)).filter(Boolean))] as string[];
-        const barcodeMatches = newBarcodes.length
-            ? await db.select().from(imdbRecords).where(and(
-                eq(imdbRecords.organisationId, orgId),
-                eq(imdbRecords.status, "ACTIVE"),
-                ne(imdbRecords.jobId, jobId),
-                inArray(imdbRecords.BARCODE, newBarcodes),
-            ))
-            : [];
-            
-        const barcodeMatchMap = new Map<string, typeof barcodeMatches>();
-        for (const match of barcodeMatches) {
-            const bc = normalizeField("BARCODE", match.BARCODE);
-            if (!barcodeMatchMap.has(bc)) barcodeMatchMap.set(bc, []);
-            barcodeMatchMap.get(bc)!.push(match);
-        }
+        const allActiveRecords = await db.select().from(imdbRecords).where(and(
+            eq(imdbRecords.organisationId, orgId), 
+            eq(imdbRecords.status, "ACTIVE")
+        ));
 
-        const existingRecords = await db.select().from(imdbRecords).where(and(eq(imdbRecords.organisationId, orgId), eq(imdbRecords.status, "ACTIVE"), ne(imdbRecords.jobId, jobId)));
+        const newBarcodes = [...new Set(newRecords.map((r: any) => normalizeField("BARCODE", r.BARCODE)).filter(Boolean))] as string[];
+        const newBarcodesSet = new Set(newBarcodes);
+        
+        const barcodeMatchMap = new Map<string, typeof allActiveRecords>();
+        if (newBarcodesSet.size > 0) {
+            for (const match of allActiveRecords) {
+                if (match.BARCODE && newBarcodesSet.has(match.BARCODE)) {
+                    const bc = normalizeField("BARCODE", match.BARCODE);
+                    if (!barcodeMatchMap.has(bc)) barcodeMatchMap.set(bc, []);
+                    barcodeMatchMap.get(bc)!.push(match);
+                }
+            }
+        }
         
         const dupInserts: any[] = [];
+        const seenPairs = new Set<string>();
+        const getPairKey = (id1: string, id2: string) => id1 < id2 ? `${id1}-${id2}` : `${id2}-${id1}`;
+
         for (const newRec of newRecords) {
             const newBarcode = normalizeField("BARCODE", newRec.BARCODE);
             const barcodeMatchedExistingIds = new Set<string>();
 
             if (newBarcode && barcodeMatchMap.has(newBarcode)) {
                 for (const existing of barcodeMatchMap.get(newBarcode)!) {
+                    if (existing.id === newRec.id) continue;
+                    
+                    const pairKey = getPairKey(newRec.id, existing.id);
+                    if (seenPairs.has(pairKey)) continue;
+                    seenPairs.add(pairKey);
+
                     barcodeMatchedExistingIds.add(existing.id);
                     dupInserts.push({
                         id: crypto.randomUUID(),
@@ -991,8 +1012,12 @@ export async function processJob(
                 }
             }
 
-            for (const existing of existingRecords) {
+            for (const existing of allActiveRecords) {
+                if (existing.id === newRec.id) continue;
                 if (barcodeMatchedExistingIds.has(existing.id)) continue;
+                
+                const pairKey = getPairKey(newRec.id, existing.id);
+                if (seenPairs.has(pairKey)) continue;
 
                 const newName = normalizeField("ITEM_NAME", newRec.ITEM_NAME).toLowerCase();
                 const existingName = normalizeField("ITEM_NAME", existing.ITEM_NAME).toLowerCase();
@@ -1000,6 +1025,7 @@ export async function processJob(
                 const existingBrand = normalizeField("BRAND", existing.BRAND);
 
                 if (newName && existingName && isSafeSubstringMatch(newName, existingName, newBrand.toLowerCase(), existingBrand.toLowerCase())) {
+                    seenPairs.add(pairKey);
                     dupInserts.push({
                         id: crypto.randomUUID(),
                         orgId,
@@ -1012,11 +1038,14 @@ export async function processJob(
                     continue;
                 }
 
-                if (newBrand && existingBrand && newBrand.toLowerCase() === existingBrand.toLowerCase() && newRec.WEIGHT === existing.WEIGHT) {
+                const newWeight = normalizeField("WEIGHT", newRec.WEIGHT);
+                const existingWeight = normalizeField("WEIGHT", existing.WEIGHT);
+                if (newBrand && existingBrand && newBrand.toLowerCase() === existingBrand.toLowerCase() && newWeight && newWeight === existingWeight) {
                     // FRAGRANCE_FLAVOR conflict guard
                     if (newRec.FRAGRANCE_FLAVOR && existing.FRAGRANCE_FLAVOR && newRec.FRAGRANCE_FLAVOR.toLowerCase() !== existing.FRAGRANCE_FLAVOR.toLowerCase()) {
                         continue;
                     }
+                    seenPairs.add(pairKey);
                     dupInserts.push({
                         id: crypto.randomUUID(),
                         orgId,
