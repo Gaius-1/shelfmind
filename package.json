@@ -10,6 +10,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run -c vitest.config.ts",
+    "eval": "bun run src/scripts/evaluate.ts",
     "format": "biome format",
     "lint": "biome lint",
     "check": "biome check",
