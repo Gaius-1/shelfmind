@@ -11,6 +11,21 @@ import { validateBarcode } from "./barcode.ts";
 import { decodeBarcodeFromImage } from "./zxing.ts";
 import { parseWatermark } from "./watermark-parser.ts";
 import { hashImage, getCachedExtraction, putCachedExtraction, invalidateStats } from "./kv-cache.ts";
+import { type VisionModelDef, type TokenUsage, getVisionModel, resolveModelRuntime, parseUsage, computeCost } from "./models.ts";
+
+// Accumulates token usage and estimated cost across all AI calls in a job.
+// JS is single-threaded so the += updates are safe under pLimit concurrency.
+interface CostAccumulator {
+	inputTokens: number;
+	outputTokens: number;
+	cost: number;
+}
+
+function addUsage(acc: CostAccumulator, usage: TokenUsage, model: VisionModelDef): void {
+	acc.inputTokens += usage.inputTokens;
+	acc.outputTokens += usage.outputTokens;
+	acc.cost += computeCost(model.pricing, usage);
+}
 
 export class JobReporter {
 	private stub: any = null;
@@ -242,16 +257,15 @@ async function removeBackground(
 	}
 }
 
-async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrText: string, env: any = null, watermarkData: any = null): Promise<IMDBProduct | null> {
+async function extractWithQwen(imageBuffer: ArrayBuffer, fileName: string, ocrText: string, env: any = null, watermarkData: any = null, model: VisionModelDef = getVisionModel()): Promise<{ product: IMDBProduct | null; usage: TokenUsage }> {
     const base64Image = Buffer.from(imageBuffer).toString("base64");
-    
-    // Read from Cloudflare env bindings if available, otherwise fallback to process.env
-    const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined);
-    const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-e8idycj2w4qgstsm.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
 
-    if (!apiKey) {
-        throw new Error("Missing QWEN_API_KEY in environment");
+    const runtime = resolveModelRuntime(model, env);
+    if (!runtime) {
+        throw new Error(`Missing API key for vision model "${model.id}" (expected one of: ${model.apiKeyEnvKeys.join(", ")})`);
     }
+    const { endpoint, apiKey, modelName } = runtime;
+    const emptyUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
 
     let prompt = "";
     if (watermarkData) {
@@ -319,7 +333,7 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            model: "qwen3-vl-235b-a22b-instruct",
+            model: modelName,
             messages: [
                 {
                     role: "user",
@@ -333,11 +347,12 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
     });
 
     if (!response.ok) {
-        console.error(`[Qwen3-VL] Failed for ${fileName}:`, await response.text());
-        return null;
+        console.error(`[Vision:${model.id}] Failed for ${fileName}:`, await response.text());
+        return { product: null, usage: emptyUsage };
     }
 
     const data = (await response.json()) as any;
+    const usage = parseUsage(data.usage);
     const content = data.choices[0].message.content;
     
     try {
@@ -371,37 +386,40 @@ Return ONLY valid JSON. Do not wrap in markdown blocks.`;
         };
 
         return {
-            ITEM_NAME: enforceThreshold("ITEM_NAME", parsed.ITEM_NAME || ""),
-            BARCODE: enforceThreshold("BARCODE", parsed.BARCODE || ""),
-            MANUFACTURER: enforceThreshold("MANUFACTURER", parsed.MANUFACTURER || ""),
-            BRAND: enforceThreshold("BRAND", parsed.BRAND || ""),
-            WEIGHT: enforceThreshold("WEIGHT", parsed.WEIGHT || ""),
-            PACKAGING_TYPE: enforceThreshold("PACKAGING_TYPE", parsed.PACKAGING_TYPE || ""),
-            COUNTRY: enforceThreshold("COUNTRY", parsed.COUNTRY || ""),
-            VARIANT: enforceThreshold("VARIANT", parsed.VARIANT || ""),
-            TYPE: enforceThreshold("TYPE", parsed.TYPE || ""),
-            FRAGRANCE_FLAVOR: enforceThreshold("FRAGRANCE_FLAVOR", parsed.FRAGRANCE_FLAVOR || ""),
-            PROMOTION: enforceThreshold("PROMOTION", parsed.PROMOTION || ""),
-            ADDONS: enforceThreshold("ADDONS", parsed.ADDONS || ""),
-            TAGLINE: enforceThreshold("TAGLINE", parsed.TAGLINE || ""),
-            imageTag: parsed.imageTag || "",
-            fieldConfidence: fieldConfidence,
-            sourceImages: [fileName],
-            rawVisionData: { [fileName]: parsed }
+            product: {
+                ITEM_NAME: enforceThreshold("ITEM_NAME", parsed.ITEM_NAME || ""),
+                BARCODE: enforceThreshold("BARCODE", parsed.BARCODE || ""),
+                MANUFACTURER: enforceThreshold("MANUFACTURER", parsed.MANUFACTURER || ""),
+                BRAND: enforceThreshold("BRAND", parsed.BRAND || ""),
+                WEIGHT: enforceThreshold("WEIGHT", parsed.WEIGHT || ""),
+                PACKAGING_TYPE: enforceThreshold("PACKAGING_TYPE", parsed.PACKAGING_TYPE || ""),
+                COUNTRY: enforceThreshold("COUNTRY", parsed.COUNTRY || ""),
+                VARIANT: enforceThreshold("VARIANT", parsed.VARIANT || ""),
+                TYPE: enforceThreshold("TYPE", parsed.TYPE || ""),
+                FRAGRANCE_FLAVOR: enforceThreshold("FRAGRANCE_FLAVOR", parsed.FRAGRANCE_FLAVOR || ""),
+                PROMOTION: enforceThreshold("PROMOTION", parsed.PROMOTION || ""),
+                ADDONS: enforceThreshold("ADDONS", parsed.ADDONS || ""),
+                TAGLINE: enforceThreshold("TAGLINE", parsed.TAGLINE || ""),
+                imageTag: parsed.imageTag || "",
+                fieldConfidence: fieldConfidence,
+                sourceImages: [fileName],
+                rawVisionData: { [fileName]: parsed }
+            },
+            usage,
         };
     } catch (e) {
-        console.error(`[Qwen3-VL] Failed to parse JSON for ${fileName}`, e);
-        return null;
+        console.error(`[Vision:${model.id}] Failed to parse JSON for ${fileName}`, e);
+        return { product: null, usage };
     }
 }
 
-async function extractWatermarkWithQwen(croppedBase64: string, env: any = null): Promise<string> {
-    const apiKey = env?.QWEN_API_KEY || (typeof process !== "undefined" ? process.env.QWEN_API_KEY : undefined);
-    const endpoint = env?.QWEN_API_ENDPOINT || (typeof process !== "undefined" ? process.env.QWEN_API_ENDPOINT : undefined) || "https://ws-e8idycj2w4qgstsm.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
-
-    if (!apiKey) {
-        throw new Error("Missing QWEN_API_KEY for watermark extraction");
+async function extractWatermarkWithQwen(croppedBase64: string, env: any = null, model: VisionModelDef = getVisionModel()): Promise<{ text: string; usage: TokenUsage }> {
+    const emptyUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
+    const runtime = resolveModelRuntime(model, env);
+    if (!runtime) {
+        throw new Error(`Missing API key for vision model "${model.id}" for watermark extraction`);
     }
+    const { endpoint, apiKey, modelName } = runtime;
 
     const prompt = `Read the watermark text printed along the edge/margin of this image.
 The watermark is typically a single line printed in small text on one edge of the photo. It usually starts with an audit/tracking ID (e.g. GH000413323_B, C1000114615, CI00021421_A) followed by a full product description (e.g. "Zesta Ginger 25+7 Free 57.6g Envelope Teabag box Cardboard Suiza") and sometimes ends with a side word (Front/Back/Left/Right).
@@ -421,7 +439,7 @@ CRITICAL RULES:
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                model: "qwen3-vl-235b-a22b-instruct",
+                model: modelName,
                 messages: [
                     {
                         role: "user",
@@ -435,18 +453,19 @@ CRITICAL RULES:
         });
 
         if (!response.ok) {
-            console.error("[Qwen3-VL-Watermark] API error:", await response.text());
-            return "";
+            console.error("[Vision-Watermark] API error:", await response.text());
+            return { text: "", usage: emptyUsage };
         }
 
         const data = (await response.json()) as any;
+        const usage = parseUsage(data.usage);
         const raw = data.choices?.[0]?.message?.content ?? "";
         // Strip Qwen3 <think> reasoning block before returning watermark text
         const text = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-        return text;
+        return { text, usage };
     } catch (e) {
-        console.error("[Qwen3-VL-Watermark] Failed to fetch:", e);
-        return "";
+        console.error("[Vision-Watermark] Failed to fetch:", e);
+        return { text: "", usage: emptyUsage };
     }
 }
 
@@ -508,6 +527,12 @@ export async function processJob(
 
     try {
         await db.update(jobs).set({ status: "PROCESSING", progress: 10, startedAt: new Date().toISOString() }).where(eq(jobs.id, jobId));
+
+        // Resolve the vision model selected for this job (falls back to default).
+        const jobRow = (await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1))[0];
+        const visionModel = getVisionModel(jobRow?.visionModel);
+        const costAcc: CostAccumulator = { inputTokens: 0, outputTokens: 0, cost: 0 };
+        await reporter.addLog("structured", `Vision model: ${visionModel.label} (${visionModel.provider})`, "info");
 
         const rawExtractions: IMDBProduct[] = [];
         let anyWatermarkFound = false;
@@ -660,7 +685,9 @@ export async function processJob(
 				if (!watermarkData && bestEdgeOcr.length < 8 && cachedBottomBuffer && cachedBottomBuffer !== buffer) {
 					try {
 						const croppedBase64 = Buffer.from(cachedBottomBuffer).toString("base64");
-						const qwenResult = await extractWatermarkWithQwen(croppedBase64, env);
+						const watermarkResult = await extractWatermarkWithQwen(croppedBase64, env, visionModel);
+						addUsage(costAcc, watermarkResult.usage, visionModel);
+						const qwenResult = watermarkResult.text;
 						if (qwenResult) {
 							for (const line of qwenResult.split('\n')) {
 								const parsed = parseWatermark(line);
@@ -737,7 +764,9 @@ export async function processJob(
             // Step 2: Cognition (Qwen3-VL) — receives clean background-removed buffer if watermark
             // was already found, otherwise receives the original buffer so it can see the watermark margins.
             const cognitionBuffer = watermarkData ? cleanBuffer : buffer;
-            const extracted = await extractWithQwen(cognitionBuffer, fileName, ocrText, env, watermarkData);
+            const cognitionResult = await extractWithQwen(cognitionBuffer, fileName, ocrText, env, watermarkData, visionModel);
+            addUsage(costAcc, cognitionResult.usage, visionModel);
+            const extracted = cognitionResult.product;
             if (extracted) {
                 // Sanitize hallucinated prompt example tags (e.g. GH000364912)
                 if (extracted.imageTag) {
@@ -1112,9 +1141,15 @@ export async function processJob(
 
         await invalidateStats(orgId);
 
+        await reporter.addLog("structured", `Token usage: ${costAcc.inputTokens.toLocaleString()} in / ${costAcc.outputTokens.toLocaleString()} out — est. cost $${costAcc.cost.toFixed(4)} on ${visionModel.label}`, "info");
+
         await db.update(jobs).set({
             status: "COMPLETED",
             progress: 100,
+            visionModel: visionModel.id,
+            inputTokens: costAcc.inputTokens,
+            outputTokens: costAcc.outputTokens,
+            totalCost: costAcc.cost,
             completedAt: new Date().toISOString(),
         }).where(eq(jobs.id, jobId));
 

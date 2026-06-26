@@ -8,7 +8,9 @@ import { Upload01Icon, AlertCircleIcon, CloudUploadIcon, Delete02Icon, ImageIcon
 import { Alert, AlertDescription, AlertTitle } from '#/components/reui/alert.tsx'
 import { Spinner } from '#/components/spinner.tsx'
 import { cn } from '#/lib/utils.ts'
+import { listVisionModels, DEFAULT_VISION_MODEL_ID } from '#/lib/models.ts'
 
+const VISION_MODELS = listVisionModels()
 const MAX_FILES = 200
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
 const ALLOWED_TYPES = 'image/jpeg, image/png, image/webp'
@@ -38,6 +40,8 @@ export function UploadForm() {
   })
 
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [visionModel, setVisionModel] = useState(DEFAULT_VISION_MODEL_ID)
+  const selectedModel = VISION_MODELS.find((m) => m.id === visionModel) ?? VISION_MODELS[0]
 
   const submitBatch = async () => {
     if (files.length === 0 || isSubmitting) return
@@ -51,7 +55,7 @@ export function UploadForm() {
       const createRes = await fetch('/api/jobs/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageCount: files.length }),
+        body: JSON.stringify({ imageCount: files.length, visionModel }),
       })
 
       if (!createRes.ok) {
@@ -109,6 +113,35 @@ export function UploadForm() {
 
   return (
     <div className="w-full flex flex-col gap-6">
+      {/* Vision Model Selector */}
+      <div className="rounded-2xl border border-border bg-card/50 p-5 flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <h3 className="text-sm font-semibold text-foreground">Vision Model</h3>
+            <p className="text-xs text-muted-foreground font-medium">
+              Choose the model used for extraction. Token usage and estimated cost are tracked per batch.
+            </p>
+          </div>
+          <div className="text-right text-[11px] text-muted-foreground font-medium">
+            <span className="font-semibold text-foreground">${selectedModel.pricing.inputPer1M.toFixed(2)}</span> / 1M in
+            <span className="mx-1">·</span>
+            <span className="font-semibold text-foreground">${selectedModel.pricing.outputPer1M.toFixed(2)}</span> / 1M out
+          </div>
+        </div>
+        <select
+          value={visionModel}
+          onChange={(e) => setVisionModel(e.target.value)}
+          disabled={isSubmitting}
+          className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50"
+        >
+          {VISION_MODELS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label} — {m.provider}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* Drop Zone */}
       <div
         className={cn(

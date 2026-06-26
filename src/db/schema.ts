@@ -103,6 +103,11 @@ export const jobs = sqliteTable('jobs', {
   status: text('status').default('PENDING'), // PENDING | PROCESSING | COMPLETED | FAILED
   progress: integer('progress').default(0), // 0–100
   imageCount: integer('image_count').default(0),
+  // ── Multi-model selection & cost accounting ──────────────────────────────
+  visionModel: text('vision_model'), // model id from src/lib/models.ts (null → default)
+  inputTokens: integer('input_tokens').default(0), // total prompt tokens across AI calls
+  outputTokens: integer('output_tokens').default(0), // total completion tokens
+  totalCost: real('total_cost').default(0), // estimated USD cost for the job
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   startedAt: text('started_at'),
   completedAt: text('completed_at'),

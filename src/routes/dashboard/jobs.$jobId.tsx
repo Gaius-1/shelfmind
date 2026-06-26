@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { PipelineVisualizer } from '#/components/pipeline/PipelineVisualizer.tsx'
 import { Badge } from '#/components/reui/badge.tsx'
 import { ArrowLeftIcon } from 'lucide-react'
+import { getVisionModel, formatCost } from '#/lib/models.ts'
 
 export const Route = createFileRoute('/dashboard/jobs/$jobId')({
   component: PipelineRoute,
@@ -54,6 +55,21 @@ function PipelineRoute() {
             <div>
               <span className="font-semibold text-foreground">Images:</span> {job.imageCount}
             </div>
+            {job.visionModel && (
+              <div>
+                <span className="font-semibold text-foreground">Model:</span> {getVisionModel(job.visionModel).label}
+              </div>
+            )}
+            {job.status === 'COMPLETED' && (
+              <div>
+                <span className="font-semibold text-foreground">Cost:</span> {formatCost(job.totalCost)}
+                {(job.inputTokens != null || job.outputTokens != null) && (
+                  <span className="ml-1 text-xs">
+                    ({(job.inputTokens || 0).toLocaleString()} in / {(job.outputTokens || 0).toLocaleString()} out)
+                  </span>
+                )}
+              </div>
+            )}
             {job.startedAt && (
               <div>
                 <span className="font-semibold text-foreground">Started:</span> {new Date(job.startedAt).toLocaleTimeString()}
