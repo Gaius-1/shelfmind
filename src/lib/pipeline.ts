@@ -1037,6 +1037,29 @@ export async function processJob(
             }
         }
         
+        const toProduct = (r: any): IMDBProduct => ({
+            ITEM_NAME: r.ITEM_NAME || "",
+            BARCODE: r.BARCODE || "",
+            MANUFACTURER: r.MANUFACTURER || "",
+            BRAND: r.BRAND || "",
+            WEIGHT: r.WEIGHT || "",
+            PACKAGING_TYPE: r.PACKAGING_TYPE || "",
+            COUNTRY: r.COUNTRY || "",
+            VARIANT: r.VARIANT || "",
+            TYPE: r.TYPE || "",
+            FRAGRANCE_FLAVOR: r.FRAGRANCE_FLAVOR || "",
+            PROMOTION: r.PROMOTION || "",
+            ADDONS: r.ADDONS || "",
+            TAGLINE: r.TAGLINE || "",
+            imageTag: r.productGroupKey || "",
+            sourceImages: [],
+        });
+        
+        const existingProducts = allActiveRecords.map(r => ({
+            id: r.id,
+            product: toProduct(r)
+        }));
+
         const dupInserts: any[] = [];
         const seenPairs = new Set<string>();
         const getPairKey = (id1: string, id2: string) => id1 < id2 ? `${id1}-${id2}` : `${id2}-${id1}`;
