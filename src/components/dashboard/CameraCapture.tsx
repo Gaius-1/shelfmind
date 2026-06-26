@@ -7,10 +7,13 @@ import { Button } from '#/components/ui/button.tsx'
 import { Spinner } from '#/components/spinner.tsx'
 import { cn } from '#/lib/utils.ts'
 import { decodeBarcodeFromImage } from '#/lib/zxing.ts'
+import { calculateBlurScore } from '#/lib/blur.ts'
+
+type CaptureStep = 'front' | 'back' | 'side' | 'done'
 
 interface CameraCaptureProps {
-  /** Called with each captured still frame as a JPEG File. */
-  onCapture: (file: File) => void
+  /** Called with the captured batch of images (front, back, side). */
+  onCapture: (files: File[]) => void
   /** Disables capture (e.g. while a batch is uploading). */
   disabled?: boolean
 }
@@ -23,6 +26,7 @@ interface LiveBarcode {
 
 // How often the live scanner samples a video frame for a barcode (ms).
 const SCAN_INTERVAL_MS = 700
+const BLUR_THRESHOLD = 100 // Laplacian variance threshold
 
 /**
  * In-browser camera capture for the upload flow. Opens the device camera via
@@ -41,6 +45,9 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
   const [error, setError] = useState<string | null>(null)
   const [capturedCount, setCapturedCount] = useState(0)
   const [liveBarcode, setLiveBarcode] = useState<LiveBarcode | null>(null)
+  const [captureStep, setCaptureStep] = useState<CaptureStep>('front')
+  const [capturedFiles, setCapturedFiles] = useState<File[]>([])
+  const [isBlurry, setIsBlurry] = useState(false)
 
   const stopCamera = useCallback(() => {
     scanningRef.current = false
@@ -51,6 +58,9 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
     if (videoRef.current) videoRef.current.srcObject = null
     setIsActive(false)
     setLiveBarcode(null)
+    setIsBlurry(false)
+    setCaptureStep('front')
+    setCapturedFiles([])
   }, [])
 
   // Grabs the current video frame to the offscreen canvas and returns it.
@@ -74,6 +84,15 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
       const canvas = drawFrame()
       if (canvas) {
         try {
+          const ctx = canvas.getContext('2d')
+          if (ctx) {
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+            const blurScore = calculateBlurScore(imageData)
+            if (scanningRef.current) {
+              setIsBlurry(blurScore < BLUR_THRESHOLD)
+            }
+          }
+
           const blob = await new Promise<Blob | null>((resolve) =>
             canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.7),
           )
@@ -131,22 +150,34 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
   }, [runScanLoop])
 
   const capture = useCallback(() => {
-    if (disabled) return
+    if (disabled || isBlurry || captureStep === 'done') return
     const canvas = drawFrame()
     if (!canvas) return
     canvas.toBlob(
       (blob) => {
         if (!blob) return
-        const file = new File([blob], `camera-${Date.now()}.jpg`, {
+        const file = new File([blob], `camera-${captureStep}-${Date.now()}.jpg`, {
           type: 'image/jpeg',
         })
-        onCapture(file)
-        setCapturedCount((c) => c + 1)
+        
+        const newFiles = [...capturedFiles, file]
+        setCapturedFiles(newFiles)
+        setCapturedCount(newFiles.length)
+
+        if (captureStep === 'front') {
+          setCaptureStep('back')
+        } else if (captureStep === 'back') {
+          setCaptureStep('side')
+        } else if (captureStep === 'side') {
+          setCaptureStep('done')
+          onCapture(newFiles)
+          stopCamera()
+        }
       },
       'image/jpeg',
       0.9,
     )
-  }, [disabled, drawFrame, onCapture])
+  }, [disabled, isBlurry, captureStep, capturedFiles, drawFrame, onCapture, stopCamera])
 
   // Tear down the stream on unmount.
   useEffect(() => stopCamera, [stopCamera])
@@ -196,7 +227,7 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
 
         {/* Live barcode overlay */}
         {isActive && liveBarcode && (
-          <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2 rounded-lg bg-black/70 px-3 py-2 backdrop-blur-sm">
+          <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2 rounded-lg bg-black/70 px-3 py-2 backdrop-blur-sm z-10">
             <span className="flex items-center gap-2 text-xs font-semibold text-white">
               <HugeiconsIcon icon={BarCode01Icon} className="size-4" />
               {liveBarcode.text}
@@ -218,6 +249,16 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
             </span>
           </div>
         )}
+
+        {/* Blur overlay */}
+        {isActive && isBlurry && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-20">
+            <div className="bg-destructive/90 text-destructive-foreground px-4 py-2 rounded-full font-bold flex items-center gap-2 shadow-lg">
+              <HugeiconsIcon icon={AlertCircleIcon} className="size-5" />
+              Image too blurry
+            </div>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -230,9 +271,9 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
       {isActive && (
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs text-muted-foreground font-medium">
-            {capturedCount > 0
-              ? `${capturedCount} photo${capturedCount === 1 ? '' : 's'} captured`
-              : 'Point at the product and capture'}
+            {captureStep === 'done' 
+              ? 'Batch captured' 
+              : `Capture ${captureStep.charAt(0).toUpperCase() + captureStep.slice(1)} of item`}
           </span>
           <div className="flex items-center gap-2">
             <Button
@@ -248,7 +289,7 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
             <Button
               type="button"
               onClick={capture}
-              disabled={disabled}
+              disabled={disabled || isBlurry || captureStep === 'done'}
               className="h-9 px-4 rounded-lg font-semibold"
             >
               <HugeiconsIcon icon={Camera01Icon} className="size-4 mr-1.5" />

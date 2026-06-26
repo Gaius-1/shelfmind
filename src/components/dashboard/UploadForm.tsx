@@ -180,7 +180,7 @@ export function UploadForm() {
       </div>
 
       {inputMode === 'camera' ? (
-        <CameraCapture onCapture={(file) => addFiles([file])} disabled={isSubmitting} />
+        <CameraCapture onCapture={(files) => addFiles(files)} disabled={isSubmitting} />
       ) : (
         /* Drop Zone */
         <div
