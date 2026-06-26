@@ -4,7 +4,7 @@ import { useFileUpload, formatBytes } from '#/hooks/use-file-upload.ts'
 import { Button } from '#/components/ui/button.tsx'
 import { Frame, FramePanel } from '#/components/reui/frame.tsx'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { Upload01Icon, AlertCircleIcon, CloudUploadIcon, Delete02Icon, ImageIcon, CameraVideoIcon } from '@hugeicons/core-free-icons'
+import { Upload01Icon, AlertCircleIcon, CloudUploadIcon, Delete02Icon, ImageIcon, Camera01Icon } from '@hugeicons/core-free-icons'
 import { Alert, AlertDescription, AlertTitle } from '#/components/reui/alert.tsx'
 import { Spinner } from '#/components/spinner.tsx'
 import { cn } from '#/lib/utils.ts'
@@ -174,7 +174,7 @@ export function UploadForm() {
               : 'text-muted-foreground hover:text-foreground',
           )}
         >
-          <HugeiconsIcon icon={CameraVideoIcon} className="size-4" />
+          <HugeiconsIcon icon={Camera01Icon} className="size-4" />
           Camera
         </button>
       </div>

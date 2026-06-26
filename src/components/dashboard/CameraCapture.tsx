@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { Camera01Icon, CameraVideoIcon, Cancel01Icon, RefreshIcon, BarCode01Icon, CheckmarkCircle02Icon, AlertCircleIcon } from '@hugeicons/core-free-icons'
+import { Camera01Icon, Cancel01Icon, RefreshIcon, BarCode01Icon, CheckmarkCircle02Icon, AlertCircleIcon } from '@hugeicons/core-free-icons'
 import { Button } from '#/components/ui/button.tsx'
 import { Spinner } from '#/components/spinner.tsx'
 import { cn } from '#/lib/utils.ts'
@@ -21,14 +21,15 @@ interface LiveBarcode {
   valid: boolean
 }
 
-// How often the live scanner samples a video frame for a barcode (ms).
+// How often the live scanner samples a camera frame for a barcode (ms).
 const SCAN_INTERVAL_MS = 700
 
 /**
- * In-browser camera capture for the upload flow. Opens the device camera via
- * getUserMedia, lets the user snap stills that feed the same extraction
- * pipeline as file uploads, and runs a live client-side ZXing scan so an
- * on-screen barcode is decoded and check-digit validated before capture.
+ * In-browser live camera capture for the upload flow. Opens the device camera
+ * via getUserMedia, lets the user snap still photos that feed the same
+ * extraction pipeline as file uploads, and runs a live client-side ZXing scan
+ * so an on-screen barcode is decoded and check-digit validated before capture.
+ * Stills only — no video is recorded.
  */
 export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -153,7 +154,7 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
 
   return (
     <div className="rounded-2xl border border-border bg-card/50 p-5 flex flex-col gap-4">
-      <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black/90">
+      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-black/90">
         <video
           ref={videoRef}
           playsInline
@@ -168,10 +169,10 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
         {!isActive && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
             <div className="bg-muted/20 flex h-16 w-16 items-center justify-center rounded-full">
-              <HugeiconsIcon icon={CameraVideoIcon} className="h-7 w-7 text-muted-foreground" />
+              <HugeiconsIcon icon={Camera01Icon} className="h-7 w-7 text-muted-foreground" />
             </div>
             <p className="text-xs text-muted-foreground font-medium max-w-xs">
-              Use your device camera to photograph products. Live barcode scanning runs while the camera is on.
+              Use your device camera to photograph products live. Live barcode scanning runs while the camera is on.
             </p>
             <Button
               type="button"
@@ -186,7 +187,7 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
                 </>
               ) : (
                 <>
-                  <HugeiconsIcon icon={CameraVideoIcon} className="size-4 mr-2" />
+                  <HugeiconsIcon icon={Camera01Icon} className="size-4 mr-2" />
                   Start Camera
                 </>
               )}
