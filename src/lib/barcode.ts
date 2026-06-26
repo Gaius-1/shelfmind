@@ -68,13 +68,15 @@ export function isValidEAN13(barcode: string): boolean {
  * Expands a UPC-E code to its full 12-digit UPC-A form.
  * Accepts either the 6-digit core, or the 7/8-digit form including the leading
  * number-system digit and/or trailing check digit. Returns null if it cannot be
- * expanded.
+ * expanded or if a provided check digit is invalid.
  */
 export function expandUpcE(upce: string): string | null {
 	const digits = toDigits(upce);
 
 	let numberSystem = "0";
 	let core: string; // 6-digit manufacturer/product core
+	let providedCheckDigit: string | null = null;
+
 	if (digits.length === 6) {
 		core = digits;
 	} else if (digits.length === 7) {
@@ -84,6 +86,7 @@ export function expandUpcE(upce: string): string | null {
 	} else if (digits.length === 8) {
 		numberSystem = digits[0];
 		core = digits.slice(1, 7);
+		providedCheckDigit = digits[7];
 	} else {
 		return null;
 	}
@@ -116,6 +119,12 @@ export function expandUpcE(upce: string): string | null {
 
 	const upcaPayload = numberSystem + mfr + prod; // 11 digits
 	const check = gtinCheckDigit(upcaPayload);
+
+	// Verify provided check digit if present
+	if (providedCheckDigit !== null && parseInt(providedCheckDigit, 10) !== check) {
+		return null;
+	}
+
 	return upcaPayload + check;
 }
 

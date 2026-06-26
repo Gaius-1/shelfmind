@@ -340,8 +340,15 @@ export function crossBatchProductsMatch(
 function hasStrongCrossBatchSignal(a: IMDBProduct, b: IMDBProduct): boolean {
 	const barcodeA = normalizeStr(a.BARCODE);
 	const barcodeB = normalizeStr(b.BARCODE);
-	if (barcodeA && barcodeB && barcodeA.length > 8 && levenshtein(barcodeA, barcodeB) <= 2) {
-		return true;
+	if (barcodeA && barcodeB) {
+		// Exact match accepted regardless of length
+		if (barcodeA === barcodeB) {
+			return true;
+		}
+		// Fuzzy match only for long barcodes
+		if (barcodeA.length > 8 && levenshtein(barcodeA, barcodeB) <= 2) {
+			return true;
+		}
 	}
 	const auditA = getBaseAuditId(a.imageTag);
 	const auditB = getBaseAuditId(b.imageTag);

@@ -48,6 +48,7 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
   const [captureStep, setCaptureStep] = useState<CaptureStep>('front')
   const [capturedFiles, setCapturedFiles] = useState<File[]>([])
   const [isBlurry, setIsBlurry] = useState(false)
+  const [isCapturing, setIsCapturing] = useState(false)
 
   const stopCamera = useCallback(() => {
     scanningRef.current = false
@@ -150,34 +151,47 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
   }, [runScanLoop])
 
   const capture = useCallback(() => {
-    if (disabled || isBlurry || captureStep === 'done') return
+    if (disabled || isBlurry || captureStep === 'done' || isCapturing) return
+    setIsCapturing(true)
     const canvas = drawFrame()
-    if (!canvas) return
+    if (!canvas) {
+      setIsCapturing(false)
+      return
+    }
     canvas.toBlob(
       (blob) => {
-        if (!blob) return
+        if (!blob) {
+          setIsCapturing(false)
+          return
+        }
         const file = new File([blob], `camera-${captureStep}-${Date.now()}.jpg`, {
           type: 'image/jpeg',
         })
-        
-        const newFiles = [...capturedFiles, file]
-        setCapturedFiles(newFiles)
-        setCapturedCount(newFiles.length)
 
-        if (captureStep === 'front') {
-          setCaptureStep('back')
-        } else if (captureStep === 'back') {
-          setCaptureStep('side')
-        } else if (captureStep === 'side') {
-          setCaptureStep('done')
-          onCapture(newFiles)
-          stopCamera()
-        }
+        setCapturedFiles(prev => {
+          const newFiles = [...prev, file]
+          setCapturedCount(newFiles.length)
+
+          if (captureStep === 'front') {
+            setCaptureStep('back')
+            setIsCapturing(false)
+          } else if (captureStep === 'back') {
+            setCaptureStep('side')
+            setIsCapturing(false)
+          } else if (captureStep === 'side') {
+            setCaptureStep('done')
+            onCapture(newFiles)
+            stopCamera()
+            setIsCapturing(false)
+          }
+
+          return newFiles
+        })
       },
       'image/jpeg',
       0.9,
     )
-  }, [disabled, isBlurry, captureStep, capturedFiles, drawFrame, onCapture, stopCamera])
+  }, [disabled, isBlurry, captureStep, isCapturing, drawFrame, onCapture, stopCamera])
 
   // Tear down the stream on unmount.
   useEffect(() => stopCamera, [stopCamera])
@@ -289,7 +303,7 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
             <Button
               type="button"
               onClick={capture}
-              disabled={disabled || isBlurry || captureStep === 'done'}
+              disabled={disabled || isBlurry || captureStep === 'done' || isCapturing}
               className="h-9 px-4 rounded-lg font-semibold"
             >
               <HugeiconsIcon icon={Camera01Icon} className="size-4 mr-1.5" />

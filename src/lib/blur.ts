@@ -8,6 +8,11 @@ export function calculateBlurScore(imageData: ImageData): number {
   const height = imageData.height
   const data = imageData.data
 
+  // Guard against tiny images where Laplacian cannot be computed
+  if (width < 3 || height < 3) {
+    return 0
+  }
+
   // 1. Convert to grayscale using luminance formula
   const grayscale = new Uint8Array(width * height)
   for (let i = 0; i < data.length; i += 4) {

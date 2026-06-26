@@ -1169,6 +1169,9 @@ export async function processJob(
             status: "FAILED",
             progress: 100,
             error: err?.message || String(err),
+            inputTokens: costAcc.inputTokens,
+            outputTokens: costAcc.outputTokens,
+            totalCost: costAcc.cost,
             completedAt: new Date().toISOString(),
         }).where(eq(jobs.id, jobId));
         await reporter.addLog("upload", `Job Failed: ${err?.message}`, "error");
